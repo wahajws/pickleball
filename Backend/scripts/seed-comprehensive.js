@@ -463,8 +463,10 @@ async function seed() {
           id: generateUUID(),
           branch_id: branch1.id,
           user_id: branchStaff.id,
-          role: 'staff',
+          position: 'Staff Member',
+          is_manager: false,
           is_active: true,
+          assigned_by: companyAdmin.id,
           created_by: companyAdmin.id
         });
         console.log('  ✓ Assigned branch staff');
