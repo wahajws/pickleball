@@ -45,6 +45,8 @@ import { PaymentsPage as CompanyPaymentsPage } from './pages/company/PaymentsPag
 // const BranchDashboardPage = () => <div>Branch Dashboard</div>;
 
 import { DashboardPage as BranchDashboardPage } from './pages/branch/DashboardPage';
+import { ContactsPage as BranchContactsPage } from "./pages/branch/ContactsPage";
+import { CourtsPage as BranchCourtsPage } from "./pages/branch/CourtsPage";
 
 const theme = createTheme({
   palette: {
@@ -260,6 +262,24 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
+                  <Route
+                    path="/branch/:companyId/:branchId/contacts"
+                    element={
+                      <ProtectedRoute requiredRole={USER_ROLES.BRANCH_MANAGER}>
+                        <BranchContactsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                  <Route
+                    path="/branch/:companyId/:branchId/courts"
+                    element={
+                      <ProtectedRoute requiredRole={USER_ROLES.BRANCH_MANAGER}>
+                        <BranchCourtsPage />
+                      </ProtectedRoute>
+                    }
+                  />
+                
+            
 
                   <Route
                     path="/branch/:companyId/:branchId/bookings"

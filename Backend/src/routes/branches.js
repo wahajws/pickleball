@@ -6,6 +6,8 @@ const BranchService = require('../services/BranchService');
 const { authenticate } = require('../middlewares/auth');
 const { validateCompany } = require('../middlewares/tenant');
 const { success } = require('../utils/response');
+const branchContactsRouter = require('./branch-contacts');
+const branchBookingsRouter = require('./branch-bookings');
 
 // GET /api/companies/:companyId/branches
 router.get('/', authenticate, validateCompany, async (req, res, next) => {
@@ -65,6 +67,10 @@ router.delete('/:branchId', authenticate, validateCompany, async (req, res, next
     next(err);
   }
 });
+
+// Mount contacts under branches
+router.use('/:branchId/contacts', branchContactsRouter);
+router.use('/:branchId/bookings', branchBookingsRouter);
 
 
 module.exports = router;

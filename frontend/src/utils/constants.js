@@ -35,6 +35,16 @@ export const ROUTES = {
     MEDIA: (companyId) => `/company/${companyId}/media`,
     STAFF: (companyId) => `/company/${companyId}/staff`,
   },
+  COMPANY_TRAINERS: {
+    LIST: (companyId) => `/companies/${companyId}/trainers`,
+  },
+
+  COMPANY_CLASSES: {
+    LIST: (companyId) => `/companies/${companyId}/classes`, // use ?branchId=
+    CREATE: (companyId) => `/companies/${companyId}/classes`,
+    UPDATE: (companyId, classId) => `/companies/${companyId}/classes/${classId}`,
+    DELETE: (companyId, classId) => `/companies/${companyId}/classes/${classId}`,
+  },
   // Branch Manager/Staff
   BRANCH: {
     LOGIN: '/branch/login',

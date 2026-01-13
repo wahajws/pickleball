@@ -103,7 +103,12 @@ module.exports = (sequelize, DataTypes) => {
     Branch.belongsTo(models.Company, { foreignKey: 'company_id', as: 'company' });
     Branch.hasMany(models.Court, { foreignKey: 'branch_id', as: 'courts' });
     Branch.hasMany(models.BranchContact, { foreignKey: 'branch_id', as: 'contacts' });
+    Branch.hasMany(models.CourtPricingRule, { foreignKey: "branch_id", as: "pricing_rules" });
+    Branch.hasMany(models.Trainer, { foreignKey: "branch_id", as: "trainers" });
+    Branch.hasMany(models.Class, { foreignKey: "branch_id", as: "classes" });
+    Branch.hasMany(models.TrainerBooking, { foreignKey: "branch_id", as: "trainer_bookings" });
   };
+  
 
   return Branch;
 };

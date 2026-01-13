@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router({ mergeParams: true });
+
 const BaseService = require('../services/BaseService');
 const CrudRouterFactory = require('./CrudRouterFactory');
+
 const { authenticate } = require('../middlewares/auth');
 const { validateCompany, validateBranch } = require('../middlewares/tenant');
 const { requirePlatformAdmin, requireCompanyAdmin } = require('../middlewares/rbac');
+
 const {
   Company, Branch, BranchContact, BranchAmenity, BranchStaff, BranchBusinessHours, BranchSpecialHours,
   Court, CourtFeature, CourtRateRule, CourtTimeSlot, ResourceBlock,
@@ -22,7 +25,9 @@ const {
   AuthIdentity, AuthSession, OtpCode, CompanyCustomer
 } = require('../models');
 
-// Platform Admin routes - All tables accessible to platform super admin
+// ======================================================
+// Platform Admin routes - All tables accessible
+// ======================================================
 const platformAdminRouter = express.Router();
 platformAdminRouter.use(authenticate, requirePlatformAdmin);
 
@@ -290,7 +295,44 @@ platformAdminRouter.use('/media-variants', CrudRouterFactory.create(new BaseServ
 
 router.use('/platform', platformAdminRouter);
 
-// Company Admin routes
+// ======================================================
+// NEW: Platform Admin Company Console (for demo tabs)
+// URL: /api/admin/companies/:companyId/*
+// NOTE: MUST be mounted BEFORE companyAdminRouter to avoid 403
+// ======================================================
+const companyConsoleRouter = express.Router({ mergeParams: true });
+companyConsoleRouter.use(authenticate, validateCompany, requirePlatformAdmin);
+
+// Branches (platform admin)
+companyConsoleRouter.use('/branches', CrudRouterFactory.create(new BaseService(Branch), {
+  requireAuth: true,
+  requireCompany: true,
+  rbac: requirePlatformAdmin
+}));
+
+// Branch scoped routes for courts
+companyConsoleRouter.param('branchId', validateBranch);
+companyConsoleRouter.use('/branches/:branchId/courts', CrudRouterFactory.create(new BaseService(Court), {
+  requireAuth: true,
+  requireCompany: true,
+  requireBranch: true,
+  rbac: requirePlatformAdmin
+}));
+
+// Pricing rules (platform admin)
+companyConsoleRouter.use('/pricing-rules', require('./company/company-pricing-rules'));
+
+// Trainers / Classes / Trainer bookings (platform admin)
+companyConsoleRouter.use('/trainers', require('./company/company-trainers'));
+companyConsoleRouter.use('/classes', require('./company/company-classes'));
+companyConsoleRouter.use('/trainer-bookings', require('./company/company-trainer-bookings'));
+
+// IMPORTANT: mount FIRST
+router.use('/companies/:companyId', companyConsoleRouter);
+
+// ======================================================
+// Company Admin routes (existing)
+// ======================================================
 const companyAdminRouter = express.Router({ mergeParams: true });
 companyAdminRouter.use(authenticate, validateCompany, requireCompanyAdmin);
 
@@ -360,6 +402,10 @@ companyAdminRouter.use('/notification-templates', CrudRouterFactory.create(new B
   rbac: requireCompanyAdmin
 }));
 
+// pricing rules (company admin)
+companyAdminRouter.use('/pricing-rules', require('./company/company-pricing-rules'));
+
+// mount company admin AFTER company console router
 router.use('/companies/:companyId', companyAdminRouter);
 
 // Activity routes
