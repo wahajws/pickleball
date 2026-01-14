@@ -163,7 +163,7 @@ export const CompanyBranchesTab = ({ companyId }) => {
             Branches
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            Create Mont Kiara branch here
+            Create branch here
           </Typography>
         </Box>
 

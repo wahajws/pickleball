@@ -41,6 +41,7 @@ import {
 import { useTheme } from "@mui/material/styles";
 import { useAuth } from "../../contexts/AuthContext";
 import { ROUTES } from "../../utils/constants";
+import { useApiQuery } from "../../hooks/useQuery";
 
 const drawerWidth = 260;
 
@@ -92,15 +93,41 @@ export const AdminLayout = ({ children }) => {
     return p.get("tab") || "";
   }, [currentSearch]);
 
+  // ✅ Platform Admin companies list endpoint
+  // API_BASE_URL already includes /api, so we pass "/admin/platform/companies"
+  const companiesListEndpoint = useMemo(() => "/admin/platform/companies", []);
+
+  const { data: companiesRes } = useApiQuery(
+    ["admin", "platformCompanies"],
+    companiesListEndpoint,
+    { enabled: true }
+  );
+
+  const companiesArr = useMemo(() => {
+    const arr =
+      companiesRes?.data?.companies ||
+      companiesRes?.companies ||
+      companiesRes?.data ||
+      companiesRes;
+    return Array.isArray(arr) ? arr : [];
+  }, [companiesRes]);
+
+  const companyName = useMemo(() => {
+    if (!companyIdInPath) return "";
+    const found = companiesArr.find((c) => String(c?.id) === String(companyIdInPath));
+    return found?.name || found?.company_name || found?.title || companyIdInPath;
+  }, [companiesArr, companyIdInPath]);
+
   const companyMenuItems = useMemo(() => {
     if (!companyIdInPath) return [];
-
     return [
       { text: "Branches", icon: <BranchesIcon />, path: companyTabPath(companyIdInPath, "branches"), tab: "branches" },
       { text: "Courts", icon: <CourtsIcon />, path: companyTabPath(companyIdInPath, "courts"), tab: "courts" },
       { text: "Trainers", icon: <TrainersIcon />, path: companyTabPath(companyIdInPath, "trainers"), tab: "trainers" },
       { text: "Classes", icon: <ClassesIcon />, path: companyTabPath(companyIdInPath, "classes"), tab: "classes" },
       { text: "Bookings", icon: <BookingsIcon />, path: companyTabPath(companyIdInPath, "bookings"), tab: "bookings" },
+      // ✅ FIX: tab name must match query exactly
+      { text: "Trainer Bookings", icon: <BookingsIcon />, path: companyTabPath(companyIdInPath, "trainer-bookings"), tab: "trainer-bookings" },
     ];
   }, [companyIdInPath]);
 
@@ -112,7 +139,6 @@ export const AdminLayout = ({ children }) => {
   };
 
   const isSelectedCompanyTab = (tabName) => {
-    // Only active inside /admin/companies/:companyId
     if (!companyIdInPath) return false;
     return activeTab === tabName;
   };
@@ -161,7 +187,7 @@ export const AdminLayout = ({ children }) => {
         ))}
       </List>
 
-      {/* Company Context Menu (shows only when inside a company detail page) */}
+      {/* Company Context Menu */}
       {companyIdInPath ? (
         <>
           <Divider />
@@ -170,7 +196,7 @@ export const AdminLayout = ({ children }) => {
               COMPANY SETUP
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
-              Company: {companyIdInPath}
+              Company: {companyName}
             </Typography>
           </Box>
 

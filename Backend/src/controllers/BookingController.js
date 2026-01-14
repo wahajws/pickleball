@@ -10,16 +10,54 @@ class BookingController {
     try {
       const companyId = req.params.companyId;
 
+      // detect console user (admin/company/branch/staff)
+      const roleNames = Array.isArray(req.roleNames) ? req.roleNames : [];
+      const isConsole = roleNames.some((r) =>
+        ["platform_super_admin", "company_admin", "branch_manager", "staff"].includes(r)
+      );
+
+      // pick status from ANY place UI might send
+      const firstItem = Array.isArray(req.body?.items) ? req.body.items[0] : null;
+
+      const allowedStatuses = ["pending", "confirmed", "cancelled", "completed", "no_show", "expired"];
+      const raw =
+        req.body?.booking_status ??
+        req.body?.status ??
+        req.body?.bookingStatus ??        // camelCase from UI
+        firstItem?.booking_status ??
+        firstItem?.status ??
+        null;
+
+      const normalized = typeof raw === "string" ? raw.trim().toLowerCase() : null;
+
+      // if console user and UI didn't send status -> default CONFIRMED
+      const finalStatus =
+        normalized && allowedStatuses.includes(normalized)
+          ? normalized
+          : isConsole
+          ? "confirmed"
+          : "pending";
+
+      // booking source: console => admin_manual else customer_web (unless UI explicitly sets)
+      const bookingSource =
+        req.body?.booking_source ||
+        (isConsole ? "admin_manual" : "customer_web");
+
+      // map payment words -> booking_status
+      if (normalized === "succeeded" || normalized === "success" || normalized === "paid") {
+        req.body.booking_status = "confirmed";
+      }
+
       const booking = await BookingService.createBooking(
         {
           ...req.body,
           company_id: companyId,
+
+          booking_status: finalStatus,
+          booking_source: bookingSource,
         },
         req.userId
       );
-
-      // court_id is inside items[0] normally
-      const firstItem = Array.isArray(req.body?.items) ? req.body.items[0] : null;
 
       await logActivity(req, {
         action: "booking_created",
@@ -29,6 +67,7 @@ class BookingController {
           branch_id: booking.branch_id,
           court_id: firstItem?.court_id || null,
           service_id: firstItem?.service_id || null,
+          status: booking.booking_status || null,
         },
       });
 
@@ -69,10 +108,9 @@ class BookingController {
 
       if (branchId) where.branch_id = branchId;
 
-      // ✅ FIX: DB column is booking_status (NOT status)
+      // FIX: DB column is booking_status (NOT status)
       if (status) where.booking_status = status;
 
-      // ✅ FIX: use Sequelize Op for date filters (and use created_at as you wanted)
       if (from || to) {
         where.created_at = {};
         if (from) where.created_at[Op.gte] = new Date(from);
@@ -92,7 +130,6 @@ class BookingController {
           },
           { model: BookingParticipant, as: "participants" },
         ],
-        // optional: latest first
         order: [["created_at", "DESC"]],
       });
 

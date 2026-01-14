@@ -1,9 +1,16 @@
-const BaseService = require('./BaseService');
-const { Booking, BookingItem, BookingParticipant, Court, Service, BookingChangeLog } = require('../models');
-const { generateUUID } = require('../utils/uuid');
-const { ConflictError, NotFoundError } = require('../utils/errors');
-const { Op } = require('sequelize');
-const sequelize = require('../config/database');
+const BaseService = require("./BaseService");
+const {
+  Booking,
+  BookingItem,
+  BookingParticipant,
+  Court,
+  Service,
+  BookingChangeLog,
+} = require("../models");
+const { generateUUID } = require("../utils/uuid");
+const { ConflictError, NotFoundError } = require("../utils/errors");
+const { Op } = require("sequelize");
+const sequelize = require("../config/database");
 
 class BookingService extends BaseService {
   constructor() {
@@ -13,19 +20,85 @@ class BookingService extends BaseService {
   async createBooking(data, userId) {
     const { branch_id, items, participants, promo_code } = data;
 
-    // ✅ accept status from UI
-    const allowedStatuses = ['pending', 'confirmed', 'cancelled', 'completed', 'no_show', 'expired'];
+    // ✅ booking statuses allowed by DB enum
+    const allowedBookingStatuses = [
+      "pending",
+      "confirmed",
+      "cancelled",
+      "completed",
+      "no_show",
+      "expired",
+    ];
 
-    // UI might send status OR booking_status
-    const requestedStatusRaw = data?.booking_status ?? data?.status;
-    const requestedStatus = typeof requestedStatusRaw === 'string'
-      ? requestedStatusRaw.trim().toLowerCase()
-      : null;
+    // ✅ payment statuses allowed by DB enum
+    const allowedPaymentStatuses = [
+      "pending",
+      "processing",
+      "succeeded",
+      "failed",
+      "cancelled",
+      "refunded",
+      "partially_refunded",
+    ];
 
-    // default pending if not provided
-    const bookingStatus = requestedStatus && allowedStatuses.includes(requestedStatus)
-      ? requestedStatus
-      : 'pending';
+    // UI might send status in many keys (and your UI currently sends "succeeded")
+    const firstItem = Array.isArray(items) ? items[0] : null;
+
+    const rawStatus =
+      data?.booking_status ??
+      data?.status ??
+      data?.bookingStatus ??
+      firstItem?.booking_status ??
+      firstItem?.status ??
+      null;
+
+    const normalized = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : null;
+
+    // ✅ map common UI/payment words to booking_status
+    const bookingStatusMap = {
+      // payment-ish values -> booking confirmed
+      succeeded: "confirmed",
+      success: "confirmed",
+      paid: "confirmed",
+      payment_success: "confirmed",
+
+      // normal values
+      confirmed: "confirmed",
+      pending: "pending",
+      cancelled: "cancelled",
+      cancel: "cancelled",
+      completed: "completed",
+      complete: "completed",
+      no_show: "no_show",
+      expired: "expired",
+    };
+
+    const mappedBookingStatus = normalized ? (bookingStatusMap[normalized] || normalized) : null;
+
+    const bookingStatus =
+      mappedBookingStatus && allowedBookingStatuses.includes(mappedBookingStatus)
+        ? mappedBookingStatus
+        : "pending";
+
+    // ✅ if UI sends succeeded, set payment_status too
+    const paymentStatusMap = {
+      succeeded: "succeeded",
+      success: "succeeded",
+      paid: "succeeded",
+      pending: "pending",
+      processing: "processing",
+      failed: "failed",
+      cancelled: "cancelled",
+      refunded: "refunded",
+      partially_refunded: "partially_refunded",
+    };
+
+    const mappedPaymentStatus = normalized ? (paymentStatusMap[normalized] || null) : null;
+
+    const paymentStatus =
+      mappedPaymentStatus && allowedPaymentStatuses.includes(mappedPaymentStatus)
+        ? mappedPaymentStatus
+        : "pending";
 
     return sequelize.transaction(async (t) => {
       const bookingNumber = `BK-${Date.now()}-${Math.random()
@@ -44,8 +117,8 @@ class BookingService extends BaseService {
         const { court_id, service_id, start_datetime, end_datetime } = item;
 
         const court = await Court.findByPk(court_id, { transaction: t });
-        if (!court || court.status !== 'active') {
-          throw new NotFoundError('Court');
+        if (!court || court.status !== "active") {
+          throw new NotFoundError("Court");
         }
 
         const existing = await BookingItem.findOne({
@@ -62,9 +135,9 @@ class BookingService extends BaseService {
           include: [
             {
               model: Booking,
-              as: 'booking',
+              as: "booking",
               where: {
-                booking_status: { [Op.notIn]: ['cancelled', 'expired'] },
+                booking_status: { [Op.notIn]: ["cancelled", "expired"] },
                 deleted_at: { [Op.is]: null },
               },
             },
@@ -73,7 +146,7 @@ class BookingService extends BaseService {
         });
 
         if (existing) {
-          throw new ConflictError('Court is already booked for this time slot');
+          throw new ConflictError("Court is already booked for this time slot");
         }
 
         const durationMinutes = Math.round(
@@ -113,17 +186,22 @@ class BookingService extends BaseService {
           branch_id,
           booking_number: bookingNumber,
 
-          // ✅ FIXED: use requested status
+          // ✅ FIX: use mapped status
           booking_status: bookingStatus,
 
-          booking_source: 'customer_web',
+          booking_source: data.booking_source || "customer_web",
           subtotal,
           discount_amount: discountAmount,
           tax_amount: taxAmount,
           fee_amount: feeAmount,
           total_amount: totalAmount,
-          currency: 'USD',
-          payment_status: 'pending',
+          currency: "USD",
+
+          // ✅ FIX: set payment status if UI sent succeeded
+          payment_status: paymentStatus,
+
+          notes: data?.notes ?? null,
+
           created_by: userId,
         },
         { transaction: t }
@@ -156,19 +234,17 @@ class BookingService extends BaseService {
         {
           id: generateUUID(),
           booking_id: booking.id,
-          change_type: 'created',
+          change_type: "created",
           changed_by: userId,
-
-          // ✅ FIXED: log correct status
-          new_value: { status: bookingStatus },
+          new_value: { status: bookingStatus, payment_status: paymentStatus },
         },
         { transaction: t }
       );
 
       return await Booking.findByPk(booking.id, {
         include: [
-          { model: BookingItem, as: 'items' },
-          { model: BookingParticipant, as: 'participants' },
+          { model: BookingItem, as: "items" },
+          { model: BookingParticipant, as: "participants" },
         ],
         transaction: t,
       });
@@ -178,12 +254,12 @@ class BookingService extends BaseService {
   async cancelBooking(bookingId, userId, reason) {
     const booking = await this.findById(bookingId);
 
-    if (booking.booking_status === 'cancelled') {
-      throw new ConflictError('Booking is already cancelled');
+    if (booking.booking_status === "cancelled") {
+      throw new ConflictError("Booking is already cancelled");
     }
 
     await booking.update({
-      booking_status: 'cancelled',
+      booking_status: "cancelled",
       cancelled_at: new Date(),
       cancelled_by: userId,
       cancellation_reason: reason,
@@ -192,10 +268,10 @@ class BookingService extends BaseService {
     await BookingChangeLog.create({
       id: generateUUID(),
       booking_id: bookingId,
-      change_type: 'cancelled',
+      change_type: "cancelled",
       changed_by: userId,
       old_value: { status: booking.booking_status },
-      new_value: { status: 'cancelled' },
+      new_value: { status: "cancelled" },
       reason,
     });
 

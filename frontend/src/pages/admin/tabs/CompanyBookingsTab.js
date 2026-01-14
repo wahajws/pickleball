@@ -46,7 +46,9 @@ const StatusChip = ({ status }) => {
       ? "info"
       : s === "cancelled"
       ? "default"
-      : "warning";
+      : s === "pending"
+      ? "warning"
+      : "default";
 
   return (
     <Chip size="small" label={s} color={color} sx={{ textTransform: "capitalize" }} />
@@ -64,6 +66,15 @@ const emptyForm = {
   booking_status: "confirmed",
   notes: "",
 };
+
+const BOOKING_STATUSES = [
+  "pending",
+  "confirmed",
+  "cancelled",
+  "completed",
+  "no_show",
+  "expired",
+];
 
 export const CompanyBookingsTab = ({ companyId }) => {
   const [filters, setFilters] = useState({
@@ -166,12 +177,9 @@ export const CompanyBookingsTab = ({ companyId }) => {
 
     if (filters.branchId) qs.set("branchId", filters.branchId);
 
-    // ✅ backend might expect status / booking_status / bookingStatus
-    // Send both to be safe
+    // ✅ send only booking_status values
     if (filters.booking_status) {
-      qs.set("booking_status", filters.booking_status);
-      qs.set("bookingStatus", filters.booking_status);
-      qs.set("status", filters.booking_status);
+      qs.set("status", filters.booking_status); // your backend getAll reads `status`
     }
 
     if (filters.from) qs.set("from", filters.from);
@@ -210,7 +218,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
       service_id: "",
       start_datetime: "",
       end_datetime: "",
-      booking_status: "confirmed", // ✅
+      booking_status: "confirmed",
     });
     setOpen(true);
   };
@@ -234,20 +242,21 @@ export const CompanyBookingsTab = ({ companyId }) => {
     const endISO = new Date(form.end_datetime).toISOString();
     if (new Date(endISO) <= new Date(startISO)) return setErrMsg("End must be after Start");
 
+    // ✅ normalize booking_status to allowed values
+    const bs = String(form.booking_status || "confirmed").toLowerCase();
+    const booking_status = BOOKING_STATUSES.includes(bs) ? bs : "confirmed";
+
     setSaving(true);
     try {
-      // ✅ Booking model expects booking_status (not status)
       const payload = {
         branch_id: form.branch_id,
         customer_id: (form.customer_id || "").trim() || null,
 
-        booking_status: form.booking_status || "confirmed", // ✅ correct
-        // keep status too (harmless) in case backend uses it in some parts
-        status: form.booking_status || "confirmed",
+        // ✅ ONLY booking_status here
+        booking_status,
 
         notes: (form.notes || "").trim() || null,
 
-        // ✅ backend requires items[]
         items: [
           {
             court_id: form.court_id,
@@ -340,6 +349,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
           ))}
         </TextField>
 
+        {/* ✅ booking_status filter */}
         <TextField
           select
           size="small"
@@ -349,14 +359,9 @@ export const CompanyBookingsTab = ({ companyId }) => {
           sx={{ minWidth: 180 }}
         >
           <MenuItem value="">All</MenuItem>
-          <MenuItem value="pending">pending</MenuItem>
-          <MenuItem value="processing">processing</MenuItem>
-          <MenuItem value="succeeded">succeeded</MenuItem>
-          <MenuItem value="failed">failed</MenuItem>
-          <MenuItem value="cancelled">cancelled</MenuItem>
-          <MenuItem value="refunded">refunded</MenuItem>
-          <MenuItem value="partially_refunded">partially_refunded</MenuItem>
-          <MenuItem value="expired">expired</MenuItem>
+          {BOOKING_STATUSES.map((s) => (
+            <MenuItem key={s} value={s}>{s}</MenuItem>
+          ))}
         </TextField>
 
         <TextField
@@ -435,11 +440,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
                   r?.service_id ||
                   "—";
 
-                // ✅ booking_status is the real DB column
-                const status =
-                  r?.booking_status ||
-                  r?.status || // fallback just in case
-                  "pending";
+                const status = r?.booking_status || "pending";
 
                 return (
                   <TableRow key={r.id} hover>
@@ -565,21 +566,16 @@ export const CompanyBookingsTab = ({ companyId }) => {
               required
             />
 
+            {/* ✅ Correct booking statuses */}
             <TextField
               select
               label="Booking Status"
               value={form.booking_status}
               onChange={(e) => setForm((s) => ({ ...s, booking_status: e.target.value }))}
             >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="pending">pending</MenuItem>
-                <MenuItem value="processing">processing</MenuItem>
-                <MenuItem value="succeeded">succeeded</MenuItem>
-                <MenuItem value="failed">failed</MenuItem>
-                <MenuItem value="cancelled">cancelled</MenuItem>
-                <MenuItem value="refunded">refunded</MenuItem>
-                <MenuItem value="partially_refunded">partially_refunded</MenuItem>
-                <MenuItem value="expired">expired</MenuItem>
+              {BOOKING_STATUSES.map((s) => (
+                <MenuItem key={s} value={s}>{s}</MenuItem>
+              ))}
             </TextField>
 
             <TextField
