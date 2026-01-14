@@ -1,5 +1,5 @@
 const BaseService = require("./BaseService");
-const { TrainerBooking, Trainer } = require("../models");
+const { TrainerBooking, Trainer, Branch, Class } = require("../models");
 const { generateUUID } = require("../utils/uuid");
 const { NotFoundError, ConflictError } = require("../utils/errors");
 const { Op } = require("sequelize");
@@ -64,7 +64,6 @@ class TrainerBookingService extends BaseService {
       deleted_at: { [Op.is]: null },
     };
 
-    // accept both styles just in case
     const branchId = q.branchId || q.branch_id;
     const trainerId = q.trainerId || q.trainer_id;
 
@@ -74,7 +73,13 @@ class TrainerBookingService extends BaseService {
 
     return TrainerBooking.findAll({
       where,
-      include: [{ model: Trainer, as: "trainer", required: false }],
+      include: [
+        { model: Trainer, as: "trainer", required: false },
+        //show class name (if class_id exists)
+        { model: Class, as: "class", attributes: ["id", "name"], required: false },
+        // show branch name
+        { model: Branch, as: "branch", attributes: ["id", "name"], required: false },
+      ],
       order: [["start_datetime", "DESC"]],
     });
   }
@@ -82,6 +87,7 @@ class TrainerBookingService extends BaseService {
   async create(userId, companyId, data = {}) {
     const branchId = data.branch_id;
     const trainerId = data.trainer_id;
+    const classId = data.class_id || null;
 
     if (!branchId) throw new ConflictError("branch_id is required");
     if (!trainerId) throw new ConflictError("trainer_id is required");
@@ -113,20 +119,33 @@ class TrainerBookingService extends BaseService {
     }
 
     const totalAmount =
-      data.total_amount != null
-        ? Number(data.total_amount)
-        : round2(durationHours * hourlyRate);
+      data.total_amount != null ? Number(data.total_amount) : round2(durationHours * hourlyRate);
 
     const status = data.status || "booked";
     if (!ALLOWED_STATUS.has(status)) {
       throw new ConflictError("Invalid status");
     }
 
+    //optional: validate class belongs to same company (only if classId provided)
+    if (classId) {
+      const found = await Class.findOne({
+        where: { id: classId, company_id: companyId, deleted_at: { [Op.is]: null } },
+      });
+      if (!found) throw new ConflictError("Invalid class_id");
+    }
+
+    //optional: validate branch exists in same company
+    const branch = await Branch.findOne({
+      where: { id: branchId, company_id: companyId, deleted_at: { [Op.is]: null } },
+    });
+    if (!branch) throw new ConflictError("Invalid branch_id");
+
     return TrainerBooking.create({
       id: generateUUID(),
       company_id: companyId,
       branch_id: branchId,
       trainer_id: trainerId,
+      class_id: classId,
       customer_id: data.customer_id || null,
 
       start_datetime: data.start_datetime,
@@ -157,6 +176,9 @@ class TrainerBookingService extends BaseService {
       throw new ConflictError("Invalid status");
     }
 
+    // accept class_id update (optional)
+    if (patch.class_id === "") patch.class_id = null;
+
     // if trainer/branch changes, validate trainer constraints
     const nextTrainerId = patch.trainer_id || booking.trainer_id;
     const nextBranchId = patch.branch_id || booking.branch_id;
@@ -168,11 +190,18 @@ class TrainerBookingService extends BaseService {
       }
     }
 
+    // validate class if provided
+    if (patch.class_id) {
+      const found = await Class.findOne({
+        where: { id: patch.class_id, company_id: companyId, deleted_at: { [Op.is]: null } },
+      });
+      if (!found) throw new ConflictError("Invalid class_id");
+    }
+
     // determine new time/rate
     const start = patch.start_datetime || booking.start_datetime;
     const end = patch.end_datetime || booking.end_datetime;
-    const rate =
-      patch.hourly_rate != null ? Number(patch.hourly_rate) : Number(booking.hourly_rate);
+    const rate = patch.hourly_rate != null ? Number(patch.hourly_rate) : Number(booking.hourly_rate);
 
     // if time or trainer changes, check overlap
     if (patch.start_datetime || patch.end_datetime || patch.trainer_id) {

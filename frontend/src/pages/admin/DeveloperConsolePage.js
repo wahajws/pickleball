@@ -65,7 +65,7 @@ const TABLES = {
       { name: 'description', label: 'Description', type: 'textarea' },
       { name: 'website_url', label: 'Website URL', type: 'text' },
       { name: 'timezone', label: 'Timezone', type: 'text', defaultValue: 'UTC' },
-      { name: 'default_currency', label: 'Currency', type: 'text', defaultValue: 'USD' },
+      { name: 'default_currency', label: 'Currency', type: 'text', defaultValue: 'MYR' },
       { name: 'status', label: 'Status', type: 'select', options: ['active', 'suspended', 'deleted'], defaultValue: 'active' },
     ],
   },

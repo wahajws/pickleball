@@ -4,7 +4,7 @@ module.exports = (sequelize, DataTypes) => {
     company_id: { type: DataTypes.CHAR(36), allowNull: false },
     branch_id: { type: DataTypes.CHAR(36), allowNull: false },
     trainer_id: { type: DataTypes.CHAR(36), allowNull: false },
-
+    class_id: { type: DataTypes.CHAR(36), allowNull: true },
     customer_id: { type: DataTypes.CHAR(36), allowNull: true }, // for demo admin can create without customer
     start_datetime: { type: DataTypes.DATE, allowNull: false },
     end_datetime: { type: DataTypes.DATE, allowNull: false },
@@ -29,6 +29,7 @@ module.exports = (sequelize, DataTypes) => {
     TrainerBooking.belongsTo(models.Company, { foreignKey: "company_id", as: "company" });
     TrainerBooking.belongsTo(models.Branch, { foreignKey: "branch_id", as: "branch" });
     TrainerBooking.belongsTo(models.Trainer, { foreignKey: "trainer_id", as: "trainer" });
+    TrainerBooking.belongsTo(models.Class, { foreignKey: "class_id", as: "class" });
   };
 
   return TrainerBooking;

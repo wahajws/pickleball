@@ -68,7 +68,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     currency: {
       type: DataTypes.STRING(3),
-      defaultValue: 'USD',
+      defaultValue: 'MYR',
       allowNull: false
     },
     payment_status: {

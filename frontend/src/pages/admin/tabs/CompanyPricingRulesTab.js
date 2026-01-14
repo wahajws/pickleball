@@ -18,7 +18,7 @@ const empty = {
   start_time: "08:00",
   end_time: "20:00",
   price_per_hour: "",
-  currency: "USD",
+  currency: "MYR",
 };
 
 export const CompanyPricingRulesTab = ({ companyId }) => {
@@ -102,7 +102,7 @@ export const CompanyPricingRulesTab = ({ companyId }) => {
       start_time: r?.start_time || "08:00",
       end_time: r?.end_time || "20:00",
       price_per_hour: r?.price_per_hour ?? "",
-      currency: r?.currency || "USD",
+      currency: r?.currency || "MYR",
     });
     setOpen(true);
   };
@@ -137,7 +137,7 @@ export const CompanyPricingRulesTab = ({ companyId }) => {
         start_time: form.start_time,
         end_time: form.end_time,
         price_per_hour: Number(form.price_per_hour),
-        currency: (form.currency || "USD").toUpperCase(),
+        currency: (form.currency || "MYR").toUpperCase(),
       };
 
       if (isEdit && activeId) {
@@ -235,7 +235,7 @@ export const CompanyPricingRulesTab = ({ companyId }) => {
                   <TableCell>{r.day_of_week}</TableCell>
                   <TableCell>{r.start_time && r.end_time ? `${r.start_time} - ${r.end_time}` : "Any"}</TableCell>
                   <TableCell>{r.price_per_hour ?? "—"}</TableCell>
-                  <TableCell>{r.currency || "USD"}</TableCell>
+                  <TableCell>{r.currency || "MYR"}</TableCell>
                   <TableCell align="right">
                     <IconButton size="small" onClick={() => openEdit(r)}><Edit fontSize="small" /></IconButton>
                     <IconButton size="small" color="error" onClick={() => del(r)}><Delete fontSize="small" /></IconButton>

@@ -37,6 +37,9 @@ export const ROUTES = {
   },
   COMPANY_TRAINERS: {
     LIST: (companyId) => `/companies/${companyId}/trainers`,
+    CREATE: (companyId) => `/companies/${companyId}/trainers`,
+    UPDATE: (companyId, trainerId) => `/companies/${companyId}/trainers/${trainerId}`,
+    DELETE: (companyId, trainerId) => `/companies/${companyId}/trainers/${trainerId}`,
   },
 
   COMPANY_CLASSES: {

@@ -49,7 +49,7 @@ export const PaymentsPage = () => {
   const [createValues, setCreateValues] = useState({
     // common fields
     amount: "",
-    currency: "USD",
+    currency: "MYR",
     status: "paid",
     payment_method: "card",
     reference: "",
@@ -145,7 +145,7 @@ export const PaymentsPage = () => {
   const resetCreateForm = () => {
     setCreateValues({
       amount: "",
-      currency: "USD",
+      currency: "MYR",
       status: "paid",
       payment_method: "card",
       reference: "",
@@ -171,7 +171,7 @@ export const PaymentsPage = () => {
     // ✅ payload (adjust names to your backend)
     const payload = {
       amount: Number(createValues.amount),
-      currency: (createValues.currency || "USD").toUpperCase(),
+      currency: (createValues.currency || "MYR").toUpperCase(),
       status: createValues.status,
       payment_method: createValues.payment_method,
       reference: createValues.reference || null,
@@ -358,7 +358,7 @@ export const PaymentsPage = () => {
             />
 
             <TextField
-              label="Currency (e.g. USD / MYR)"
+              label="Currency (e.g. MYR)"
               fullWidth
               margin="normal"
               value={createValues.currency}

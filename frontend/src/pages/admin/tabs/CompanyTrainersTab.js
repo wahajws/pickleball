@@ -1,3 +1,4 @@
+// src/pages/admin/tabs/CompanyTrainersTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Paper,
@@ -45,7 +46,7 @@ export const CompanyTrainersTab = ({ companyId }) => {
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(empty);
 
-  // ✅ Branches endpoint (NO /admin)
+  // ---------- Branches ----------
   const branchesEndpoint = useMemo(() => {
     if (!companyId) return "";
     const ep = API_ENDPOINTS?.BRANCHES;
@@ -70,7 +71,6 @@ export const CompanyTrainersTab = ({ companyId }) => {
     return Array.isArray(arr) ? arr : [];
   }, [branchesRes]);
 
-  // auto-select first branch
   useEffect(() => {
     if (!selectedBranchId && branches.length) {
       setSelectedBranchId(branches[0].id);
@@ -81,19 +81,22 @@ export const CompanyTrainersTab = ({ companyId }) => {
     return branches.find((b) => b.id === selectedBranchId)?.name || "";
   }, [branches, selectedBranchId]);
 
-  // ✅ Trainers endpoint (NO /admin) + include branch filter
-  const endpoint = useMemo(() => {
+  // ---------- Trainers (LIST endpoint with querystring) ----------
+  const trainersListEndpoint = useMemo(() => {
     if (!companyId) return "";
     const qs = selectedBranchId ? `branchId=${encodeURIComponent(selectedBranchId)}` : "";
-    const ep = API_ENDPOINTS?.COMPANY_MODULES?.TRAINERS;
-    if (ep?.LIST) return ep.LIST(companyId, qs);
-    return `/companies/${companyId}/trainers${qs ? `?${qs}` : ""}`;
+    const ep = API_ENDPOINTS?.COMPANY_TRAINERS || API_ENDPOINTS?.COMPANY_MODULES?.TRAINERS;
+
+    // Your constants show COMPANY_TRAINERS.LIST(companyId) => no qs support
+    // so append qs manually
+    const base = ep?.LIST ? ep.LIST(companyId) : `/companies/${companyId}/trainers`;
+    return `${base}${qs ? `?${qs}` : ""}`;
   }, [companyId, selectedBranchId]);
 
   const { data, isLoading, error } = useApiQuery(
     ["company", "trainers", companyId, selectedBranchId, reloadKey],
-    endpoint,
-    { enabled: !!companyId && !!endpoint }
+    trainersListEndpoint,
+    { enabled: !!companyId && !!trainersListEndpoint }
   );
 
   const rows = useMemo(() => {
@@ -106,6 +109,17 @@ export const CompanyTrainersTab = ({ companyId }) => {
     return Array.isArray(arr) ? arr : [];
   }, [data]);
 
+  // ✅ Base endpoints WITHOUT querystring (for POST/PATCH/DELETE)
+  const trainersApi = useMemo(() => {
+    const ep = API_ENDPOINTS?.COMPANY_TRAINERS || API_ENDPOINTS?.COMPANY_MODULES?.TRAINERS;
+    return {
+      create: (cid) => (ep?.CREATE ? ep.CREATE(cid) : `/companies/${cid}/trainers`),
+      update: (cid, id) => (ep?.UPDATE ? ep.UPDATE(cid, id) : `/companies/${cid}/trainers/${id}`),
+      del: (cid, id) => (ep?.DELETE ? ep.DELETE(cid, id) : `/companies/${cid}/trainers/${id}`),
+    };
+  }, []);
+
+  // ---------- UI ----------
   const openCreate = () => {
     setErrMsg("");
     setIsEdit(false);
@@ -141,7 +155,7 @@ export const CompanyTrainersTab = ({ companyId }) => {
     setSaving(true);
     try {
       const payload = {
-        branch_id: selectedBranchId, // ✅ REQUIRED by your backend
+        branch_id: selectedBranchId,
         name: form.name.trim(),
         email: (form.email || "").trim() || null,
         phone: (form.phone || "").trim() || null,
@@ -149,12 +163,15 @@ export const CompanyTrainersTab = ({ companyId }) => {
       };
 
       if (isEdit && activeId) {
-        await adminFetch(`${endpoint}/${activeId}`, {
+        await adminFetch(trainersApi.update(companyId, activeId), {
           method: "PATCH",
           body: payload,
         });
       } else {
-        await adminFetch(endpoint, { method: "POST", body: payload });
+        await adminFetch(trainersApi.create(companyId), {
+          method: "POST",
+          body: payload,
+        });
       }
 
       setOpen(false);
@@ -172,7 +189,7 @@ export const CompanyTrainersTab = ({ companyId }) => {
     if (!ok) return;
 
     try {
-      await adminFetch(`${endpoint}/${t.id}`, { method: "DELETE" });
+      await adminFetch(trainersApi.del(companyId, t.id), { method: "DELETE" });
       setReloadKey((k) => k + 1);
     } catch (e) {
       setErrMsg(e?.message || "Delete failed");
@@ -207,11 +224,7 @@ export const CompanyTrainersTab = ({ companyId }) => {
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems="center" sx={{ mb: 2 }}>
         <FormControl sx={{ minWidth: 260 }} size="small" disabled={branchesLoading || !branches.length}>
           <InputLabel>Branch</InputLabel>
-          <Select
-            label="Branch"
-            value={selectedBranchId}
-            onChange={(e) => setSelectedBranchId(e.target.value)}
-          >
+          <Select label="Branch" value={selectedBranchId} onChange={(e) => setSelectedBranchId(e.target.value)}>
             {branches.map((b) => (
               <MenuItem key={b.id} value={b.id}>
                 {b.name}

@@ -1,30 +1,38 @@
+// Backend/src/routes/company/trainer-bookings.js
 const express = require("express");
 const router = express.Router({ mergeParams: true });
 
 const { authenticate } = require("../../middlewares/auth");
-const { validateCompany } = require("../../middlewares/tenant");
-const { requirePlatformAdmin, requireCompanyAdmin } = require("../../middlewares/rbac");
-
+const { validateCompany, requireCompanySubscription } = require("../../middlewares/tenant");
 const { success } = require("../../utils/response");
 const validate = require("../../middlewares/validate");
 
-const TrainerBookingService = require("../../services/TrainerBookingService");
-
 const { body, query, param } = require("express-validator");
 
-// Allow Platform Admin OR Company Admin
-const allowPlatformOrCompanyAdmin = (req, res, next) => {
-  // try platform admin first
-  requirePlatformAdmin(req, res, (err) => {
-    if (!err) return next(); // platform admin ok
-    // else fallback to company admin
-    return requireCompanyAdmin(req, res, next);
-  });
-};
+const TrainerBookingService = require("../../services/TrainerBookingService");
+const { isConsoleUser } = require("../../utils/isConsoleUser");
 
+// auth
 router.use(authenticate);
+
+// sets req.companyId
 router.param("companyId", validateCompany);
-router.use(allowPlatformOrCompanyAdmin);
+
+// ✅ bypass subscription + permission checks for console users
+router.use(async (req, res, next) => {
+  try {
+    const companyId = req.companyId || req.params.companyId;
+    const userId = req.user?.id;
+
+    // console user -> bypass
+    if (await isConsoleUser(userId, companyId)) return next();
+
+    // non-console (customer) -> must be subscribed
+    return requireCompanySubscription(req, res, next);
+  } catch (e) {
+    return next(e);
+  }
+});
 
 /**
  * GET /api/companies/:companyId/trainer-bookings?branchId=&trainerId=&status=
@@ -42,10 +50,10 @@ router.get(
   ],
   async (req, res, next) => {
     try {
-      const trainer_bookings = await TrainerBookingService.list(
-        req.params.companyId,
-        req.query
-      );
+      const companyId = req.companyId || req.params.companyId;
+
+      const trainer_bookings = await TrainerBookingService.list(companyId, req.query);
+
       return success(res, { trainer_bookings });
     } catch (e) {
       next(e);
@@ -55,8 +63,6 @@ router.get(
 
 /**
  * POST /api/companies/:companyId/trainer-bookings
- * Required for demo: branch_id, trainer_id, start_datetime, end_datetime, hourly_rate
- * customer_id optional (admin can create without customer)
  */
 router.post(
   "/",
@@ -68,10 +74,7 @@ router.post(
     body("start_datetime").notEmpty().isISO8601().withMessage("start_datetime must be ISO8601"),
     body("end_datetime").notEmpty().isISO8601().withMessage("end_datetime must be ISO8601"),
 
-    body("hourly_rate")
-      .notEmpty()
-      .isDecimal()
-      .withMessage("hourly_rate is required (decimal)"),
+    body("hourly_rate").notEmpty().isDecimal().withMessage("hourly_rate is required (decimal)"),
 
     body("currency")
       .optional()
@@ -87,11 +90,14 @@ router.post(
   ],
   async (req, res, next) => {
     try {
+      const companyId = req.companyId || req.params.companyId;
+
       const trainer_booking = await TrainerBookingService.create(
         req.userId,
-        req.params.companyId,
+        companyId,
         req.body
       );
+
       return success(res, { trainer_booking }, "Trainer booking created", 201);
     } catch (e) {
       next(e);
@@ -118,12 +124,15 @@ router.patch(
   ],
   async (req, res, next) => {
     try {
+      const companyId = req.companyId || req.params.companyId;
+
       const trainer_booking = await TrainerBookingService.update(
         req.userId,
-        req.params.companyId,
+        companyId,
         req.params.id,
         req.body
       );
+
       return success(res, { trainer_booking }, "Trainer booking updated");
     } catch (e) {
       next(e);
@@ -133,18 +142,20 @@ router.patch(
 
 /**
  * DELETE /api/companies/:companyId/trainer-bookings/:id
- * (Service should soft-delete using deleted_at if you want)
  */
 router.delete(
   "/:id",
   [param("id").isUUID().withMessage("id must be UUID"), validate],
   async (req, res, next) => {
     try {
+      const companyId = req.companyId || req.params.companyId;
+
       const trainer_booking = await TrainerBookingService.remove(
         req.userId,
-        req.params.companyId,
+        companyId,
         req.params.id
       );
+
       return success(res, { trainer_booking }, "Trainer booking deleted");
     } catch (e) {
       next(e);

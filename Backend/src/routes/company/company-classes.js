@@ -9,33 +9,27 @@ const ClassService = require("../../services/ClassService");
 router.use(authenticate);
 router.param("companyId", validateCompany);
 
-// GET /api/admin/companies/:companyId/classes?branchId=xxx
+// GET /api/companies/:companyId/classes?branchId=xxx
 router.get("/", async (req, res, next) => {
   try {
-    const classes = await ClassService.list(req.params.companyId, req.query.branchId);
+    const classes = await ClassService.list(req.params.companyId, req.query);
     return success(res, { classes });
   } catch (e) {
     next(e);
   }
 });
 
-// POST /api/admin/companies/:companyId/classes
+// POST /api/companies/:companyId/classes
 router.post("/", async (req, res, next) => {
   try {
-    // branch_id required
-    const cls = await ClassService.create(
-      req.userId,
-      req.params.companyId,
-      req.body.branch_id,
-      req.body
-    );
+    const cls = await ClassService.create(req.userId, req.params.companyId, req.body);
     return success(res, { class: cls }, "Class created", 201);
   } catch (e) {
     next(e);
   }
 });
 
-// PATCH /api/admin/companies/:companyId/classes/:classId
+// PATCH /api/companies/:companyId/classes/:classId
 router.patch("/:classId", async (req, res, next) => {
   try {
     const cls = await ClassService.update(
@@ -50,14 +44,10 @@ router.patch("/:classId", async (req, res, next) => {
   }
 });
 
-// DELETE /api/admin/companies/:companyId/classes/:classId
+// DELETE /api/companies/:companyId/classes/:classId
 router.delete("/:classId", async (req, res, next) => {
   try {
-    const cls = await ClassService.remove(
-      req.userId,
-      req.params.companyId,
-      req.params.classId
-    );
+    const cls = await ClassService.remove(req.userId, req.params.companyId, req.params.classId);
     return success(res, { class: cls }, "Class deleted");
   } catch (e) {
     next(e);

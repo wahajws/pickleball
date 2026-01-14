@@ -84,7 +84,7 @@ export const ServicesPage = () => {
     service_type: "",
     description: "",
     base_price: "",
-    currency: "USD",
+    currency: "MYR",
     is_active: true,
   });
 
@@ -172,7 +172,7 @@ export const ServicesPage = () => {
           service.base_price === null || service.base_price === undefined
             ? ""
             : String(service.base_price),
-        currency: service.currency || "USD",
+        currency: service.currency || "MYR",
         is_active: service.is_active !== false,
       });
     } else {
@@ -182,7 +182,7 @@ export const ServicesPage = () => {
         service_type: "",
         description: "",
         base_price: "",
-        currency: "USD",
+        currency: "MYR",
         is_active: true,
       });
     }
@@ -214,7 +214,7 @@ export const ServicesPage = () => {
       description: formValues.description?.trim() || null,
       base_price:
         formValues.base_price === "" ? null : Number(formValues.base_price),
-      currency: (formValues.currency || "USD").toUpperCase(),
+      currency: (formValues.currency || "MYR").toUpperCase(),
       is_active: !!formValues.is_active,
     };
 
@@ -300,7 +300,7 @@ export const ServicesPage = () => {
                     <TableCell>{s.name}</TableCell>
                     <TableCell>{s.service_type}</TableCell>
                     <TableCell>{s.base_price ?? "—"}</TableCell>
-                    <TableCell>{s.currency ?? "USD"}</TableCell>
+                    <TableCell>{s.currency ?? "MYR"}</TableCell>
                     <TableCell>{s.is_active ? "Yes" : "No"}</TableCell>
                     <TableCell>
                       {s.created_at ? formatDateTime(s.created_at) : "—"}
@@ -397,7 +397,7 @@ export const ServicesPage = () => {
                 })
               }
               inputProps={{ maxLength: 3 }}
-              helperText="Example: USD, MYR"
+              helperText="Example: MYR"
             />
 
             <FormControlLabel

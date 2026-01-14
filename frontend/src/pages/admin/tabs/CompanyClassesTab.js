@@ -183,8 +183,8 @@ export const CompanyClassesTab = ({ companyId }) => {
     setSaving(true);
     try {
       const payload = {
-        branch_id: form.branch_id,               // ✅ required
-        trainer_id: form.trainer_id,             // ✅ required (NOT null)
+        branch_id: form.branch_id,
+        trainer_id: form.trainer_id,
         name: form.name.trim(),
         description: (form.description || "").trim() || null,
         capacity: Number(form.capacity || 0),

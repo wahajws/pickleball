@@ -29,13 +29,7 @@ import { useApiQuery } from "../../../hooks/useQuery";
 import { API_ENDPOINTS } from "../../../config/api";
 import { adminFetch } from "./_adminApi";
 
-const uuidv4 = () =>
-  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-
+// -------- helpers --------
 const fmt = (d) => {
   if (!d) return "—";
   const dt = new Date(d);
@@ -44,7 +38,7 @@ const fmt = (d) => {
 };
 
 const StatusChip = ({ status }) => {
-  const s = (status || "pending").toLowerCase();
+  const s = String(status || "pending").toLowerCase();
   const color =
     s === "confirmed"
       ? "success"
@@ -53,9 +47,13 @@ const StatusChip = ({ status }) => {
       : s === "cancelled"
       ? "default"
       : "warning";
-  return <Chip size="small" label={s} color={color} sx={{ textTransform: "capitalize" }} />;
+
+  return (
+    <Chip size="small" label={s} color={color} sx={{ textTransform: "capitalize" }} />
+  );
 };
 
+// IMPORTANT: Booking model uses booking_status (not status)
 const emptyForm = {
   branch_id: "",
   court_id: "",
@@ -63,14 +61,14 @@ const emptyForm = {
   customer_id: "",
   start_datetime: "",
   end_datetime: "",
-  status: "confirmed",
+  booking_status: "confirmed",
   notes: "",
 };
 
 export const CompanyBookingsTab = ({ companyId }) => {
   const [filters, setFilters] = useState({
     branchId: "",
-    status: "",
+    booking_status: "",
     from: "",
     to: "",
   });
@@ -106,13 +104,14 @@ export const CompanyBookingsTab = ({ companyId }) => {
     return Array.isArray(arr) ? arr : [];
   }, [branchesRes]);
 
+  // auto-select first branch
   useEffect(() => {
     if (!filters.branchId && branches.length) {
       setFilters((s) => ({ ...s, branchId: branches[0].id }));
     }
   }, [branches, filters.branchId]);
 
-  // ---------- Courts (Create dialog) ----------
+  // ---------- Courts ----------
   const courtsEndpoint = useMemo(() => {
     if (!companyId || !form.branch_id) return "";
     return API_ENDPOINTS.COURTS.LIST(companyId, form.branch_id);
@@ -131,13 +130,15 @@ export const CompanyBookingsTab = ({ companyId }) => {
     return Array.isArray(arr) ? arr : [];
   }, [courtsRes]);
 
-  // ---------- Services (Create dialog) ----------
+  // ---------- Services ----------
   const servicesEndpoint = useMemo(() => {
     if (!companyId || !form.branch_id) return "";
-    // ✅ IMPORTANT: NOT /admin
     const qs = new URLSearchParams();
     qs.set("branchId", form.branch_id);
-    return `/companies/${companyId}/services?${qs.toString()}`;
+
+    return API_ENDPOINTS?.SERVICES?.LIST
+      ? API_ENDPOINTS.SERVICES.LIST(companyId, qs.toString())
+      : `/companies/${companyId}/services?${qs.toString()}`;
   }, [companyId, form.branch_id]);
 
   const {
@@ -158,16 +159,25 @@ export const CompanyBookingsTab = ({ companyId }) => {
     return Array.isArray(arr) ? arr : [];
   }, [servicesRes]);
 
-  // ---------- Bookings list ----------
+  // ---------- Bookings ----------
   const bookingsEndpoint = useMemo(() => {
     if (!companyId) return "";
     const qs = new URLSearchParams();
+
     if (filters.branchId) qs.set("branchId", filters.branchId);
-    if (filters.status) qs.set("status", filters.status);
+
+    // ✅ backend might expect status / booking_status / bookingStatus
+    // Send both to be safe
+    if (filters.booking_status) {
+      qs.set("booking_status", filters.booking_status);
+      qs.set("bookingStatus", filters.booking_status);
+      qs.set("status", filters.booking_status);
+    }
+
     if (filters.from) qs.set("from", filters.from);
     if (filters.to) qs.set("to", filters.to);
-    // ✅ your backend route is /api/companies/:companyId/bookings
-    return `/companies/${companyId}/bookings?${qs.toString()}`;
+
+    return API_ENDPOINTS.BOOKINGS.LIST(companyId, qs.toString());
   }, [companyId, filters]);
 
   const {
@@ -200,7 +210,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
       service_id: "",
       start_datetime: "",
       end_datetime: "",
-      status: "confirmed",
+      booking_status: "confirmed", // ✅
     });
     setOpen(true);
   };
@@ -226,24 +236,29 @@ export const CompanyBookingsTab = ({ companyId }) => {
 
     setSaving(true);
     try {
-      // ✅ backend expects branch_id + items[]
+      // ✅ Booking model expects booking_status (not status)
       const payload = {
         branch_id: form.branch_id,
+        customer_id: (form.customer_id || "").trim() || null,
+
+        booking_status: form.booking_status || "confirmed", // ✅ correct
+        // keep status too (harmless) in case backend uses it in some parts
+        status: form.booking_status || "confirmed",
+
+        notes: (form.notes || "").trim() || null,
+
+        // ✅ backend requires items[]
         items: [
           {
-            id: uuidv4(),
             court_id: form.court_id,
             service_id: form.service_id,
             start_datetime: startISO,
             end_datetime: endISO,
-            notes: (form.notes || "").trim() || null,
           },
         ],
-        status: form.status || "confirmed",
-        customer_id: (form.customer_id || "").trim() || null,
       };
 
-      await adminFetch(`/companies/${companyId}/bookings`, {
+      await adminFetch(API_ENDPOINTS.BOOKINGS.CREATE(companyId), {
         method: "POST",
         body: payload,
       });
@@ -264,8 +279,9 @@ export const CompanyBookingsTab = ({ companyId }) => {
     if (!ok) return;
 
     try {
-      await adminFetch(`/companies/${companyId}/bookings/${row.id}/cancel`, { method: "POST" });
+      await adminFetch(API_ENDPOINTS.BOOKINGS.CANCEL(companyId, row.id), { method: "POST" });
       setReloadKey((k) => k + 1);
+      await refetchBookings?.();
     } catch (e) {
       setErrMsg(e?.message || "Failed to cancel booking");
     }
@@ -306,6 +322,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
       {branchesError ? <Alert severity="error" sx={{ mb: 2 }}>Failed to load branches</Alert> : null}
       {bookingsError ? <Alert severity="error" sx={{ mb: 2 }}>Failed to load bookings</Alert> : null}
 
+      {/* Filters */}
       <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2 }}>
         <TextField
           select
@@ -327,15 +344,19 @@ export const CompanyBookingsTab = ({ companyId }) => {
           select
           size="small"
           label="Status"
-          value={filters.status}
-          onChange={(e) => setFilters((s) => ({ ...s, status: e.target.value }))}
+          value={filters.booking_status}
+          onChange={(e) => setFilters((s) => ({ ...s, booking_status: e.target.value }))}
           sx={{ minWidth: 180 }}
         >
           <MenuItem value="">All</MenuItem>
           <MenuItem value="pending">pending</MenuItem>
-          <MenuItem value="confirmed">confirmed</MenuItem>
+          <MenuItem value="processing">processing</MenuItem>
+          <MenuItem value="succeeded">succeeded</MenuItem>
+          <MenuItem value="failed">failed</MenuItem>
           <MenuItem value="cancelled">cancelled</MenuItem>
-          <MenuItem value="completed">completed</MenuItem>
+          <MenuItem value="refunded">refunded</MenuItem>
+          <MenuItem value="partially_refunded">partially_refunded</MenuItem>
+          <MenuItem value="expired">expired</MenuItem>
         </TextField>
 
         <TextField
@@ -356,6 +377,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
         />
       </Stack>
 
+      {/* Table */}
       <Box sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2, overflow: "hidden" }}>
         <Table size="small">
           <TableHead>
@@ -363,9 +385,11 @@ export const CompanyBookingsTab = ({ companyId }) => {
               <TableCell sx={{ fontWeight: 800 }}>Start</TableCell>
               <TableCell sx={{ fontWeight: 800 }}>End</TableCell>
               <TableCell sx={{ fontWeight: 800 }}>Court</TableCell>
-              <TableCell sx={{ fontWeight: 800 }}>Customer</TableCell>
+              <TableCell sx={{ fontWeight: 800 }}>Service</TableCell>
               <TableCell sx={{ fontWeight: 800 }}>Status</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 800 }}>Actions</TableCell>
+              <TableCell align="right" sx={{ fontWeight: 800 }}>
+                Actions
+              </TableCell>
             </TableRow>
           </TableHead>
 
@@ -382,35 +406,73 @@ export const CompanyBookingsTab = ({ companyId }) => {
                 </TableCell>
               </TableRow>
             ) : bookings.length ? (
-              bookings.map((r) => (
-                <TableRow key={r.id} hover>
-                  <TableCell>{fmt(r.start_datetime || r.start_time || r.start)}</TableCell>
-                  <TableCell>{fmt(r.end_datetime || r.end_time || r.end)}</TableCell>
-                  <TableCell>{r.court?.name || r.court_name || r.court_id || "—"}</TableCell>
-                  <TableCell>{r.customer?.name || r.customer_id || "—"}</TableCell>
-                  <TableCell><StatusChip status={r.status} /></TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="View (optional)">
-                      <IconButton size="small" disabled>
-                        <Visibility fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+              bookings.map((r) => {
+                const item0 = r?.items?.[0];
 
-                    <Tooltip title="Cancel">
-                      <span>
-                        <IconButton
-                          size="small"
-                          color="warning"
-                          onClick={() => cancelBooking(r)}
-                          disabled={String(r.status || "").toLowerCase() === "cancelled"}
-                        >
-                          <Cancel fontSize="small" />
+                const start =
+                  item0?.start_datetime ||
+                  item0?.start_time ||
+                  r?.start_datetime ||
+                  r?.start;
+
+                const end =
+                  item0?.end_datetime ||
+                  item0?.end_time ||
+                  r?.end_datetime ||
+                  r?.end;
+
+                const courtLabel =
+                  item0?.court?.name ||
+                  r?.court?.name ||
+                  item0?.court_id ||
+                  r?.court_id ||
+                  "—";
+
+                const serviceLabel =
+                  item0?.service?.name ||
+                  r?.service?.name ||
+                  item0?.service_id ||
+                  r?.service_id ||
+                  "—";
+
+                // ✅ booking_status is the real DB column
+                const status =
+                  r?.booking_status ||
+                  r?.status || // fallback just in case
+                  "pending";
+
+                return (
+                  <TableRow key={r.id} hover>
+                    <TableCell>{fmt(start)}</TableCell>
+                    <TableCell>{fmt(end)}</TableCell>
+                    <TableCell>{courtLabel}</TableCell>
+                    <TableCell>{serviceLabel}</TableCell>
+                    <TableCell>
+                      <StatusChip status={status} />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="View (optional)">
+                        <IconButton size="small" disabled>
+                          <Visibility fontSize="small" />
                         </IconButton>
-                      </span>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
+                      </Tooltip>
+
+                      <Tooltip title="Cancel">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => cancelBooking(r)}
+                            disabled={String(status).toLowerCase() === "cancelled"}
+                          >
+                            <Cancel fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             ) : (
               <TableRow>
                 <TableCell colSpan={6}>
@@ -424,6 +486,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
         </Table>
       </Box>
 
+      {/* Create dialog */}
       <Dialog open={open} onClose={close} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontWeight: 900 }}>New Booking</DialogTitle>
 
@@ -437,7 +500,12 @@ export const CompanyBookingsTab = ({ companyId }) => {
               label="Branch"
               value={form.branch_id}
               onChange={(e) =>
-                setForm((s) => ({ ...s, branch_id: e.target.value, court_id: "", service_id: "" }))
+                setForm((s) => ({
+                  ...s,
+                  branch_id: e.target.value,
+                  court_id: "",
+                  service_id: "",
+                }))
               }
               required
             >
@@ -471,7 +539,7 @@ export const CompanyBookingsTab = ({ companyId }) => {
               onChange={(e) => setForm((s) => ({ ...s, service_id: e.target.value }))}
               required
               disabled={!form.branch_id || servicesLoading}
-              helperText={!form.branch_id ? "Select branch first" : services.length ? "" : "Create at least 1 service first"}
+              helperText={!services.length ? "Create at least 1 service first" : ""}
             >
               {services.map((sv) => (
                 <MenuItem key={sv.id} value={sv.id}>
@@ -499,14 +567,19 @@ export const CompanyBookingsTab = ({ companyId }) => {
 
             <TextField
               select
-              label="Status"
-              value={form.status}
-              onChange={(e) => setForm((s) => ({ ...s, status: e.target.value }))}
+              label="Booking Status"
+              value={form.booking_status}
+              onChange={(e) => setForm((s) => ({ ...s, booking_status: e.target.value }))}
             >
-              <MenuItem value="pending">pending</MenuItem>
-              <MenuItem value="confirmed">confirmed</MenuItem>
-              <MenuItem value="completed">completed</MenuItem>
-              <MenuItem value="cancelled">cancelled</MenuItem>
+                <MenuItem value="">All</MenuItem>
+                <MenuItem value="pending">pending</MenuItem>
+                <MenuItem value="processing">processing</MenuItem>
+                <MenuItem value="succeeded">succeeded</MenuItem>
+                <MenuItem value="failed">failed</MenuItem>
+                <MenuItem value="cancelled">cancelled</MenuItem>
+                <MenuItem value="refunded">refunded</MenuItem>
+                <MenuItem value="partially_refunded">partially_refunded</MenuItem>
+                <MenuItem value="expired">expired</MenuItem>
             </TextField>
 
             <TextField
@@ -526,7 +599,9 @@ export const CompanyBookingsTab = ({ companyId }) => {
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={close} disabled={saving}>Cancel</Button>
+          <Button onClick={close} disabled={saving}>
+            Cancel
+          </Button>
           <Button variant="contained" onClick={save} disabled={saving}>
             {saving ? "Saving..." : "Save"}
           </Button>

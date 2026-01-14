@@ -81,12 +81,13 @@ const emptyForm = {
   id: "",
   branch_id: "",
   trainer_id: "",
+  class_id: "",
   customer_id: "",
   start_datetime: "",
   end_datetime: "",
   hourly_rate: "",
   total_amount: "",
-  currency: "USD",
+  currency: "MYR",
   status: "booked",
 };
 
@@ -128,8 +129,34 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
     if (Array.isArray(trainersData?.data)) return trainersData.data;
     return [];
   }, [trainersData]);
+  
+  const classesEndpoint = useMemo(() => {
+    if (!companyId) return null;
+    const qs = new URLSearchParams();
+    // filter by selected branch in the FORM (not filters), because dialog uses form.branch_id
+    if (form.branch_id) qs.set("branchId", form.branch_id);
+    // If you have API_ENDPOINTS for classes use it; else fallback to route
+    return API_ENDPOINTS?.COMPANY_MODULES?.CLASSES?.LIST
+      ? API_ENDPOINTS.COMPANY_MODULES.CLASSES.LIST(companyId, qs.toString())
+      : `/companies/${companyId}/classes?${qs.toString()}`;
+  }, [companyId, form.branch_id]);
 
-  // ✅ Trainer bookings list endpoint (FIXED)
+  const { data: classesData } = useApiQuery(
+    ["admin", "classes", companyId, form.branch_id],
+    classesEndpoint,
+    { enabled: !!classesEndpoint }
+  );
+
+  const classes = useMemo(() => {
+    const arr =
+      classesData?.data?.classes ||
+      classesData?.classes ||
+      classesData?.data?.rows ||
+      classesData?.data ||
+      classesData;
+    return Array.isArray(arr) ? arr : [];
+  }, [classesData]);
+
   const bookingsEndpoint = useMemo(() => {
     if (!companyId) return null;
     const qs = new URLSearchParams();
@@ -176,11 +203,12 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
       branch_id: row.branch_id || "",
       trainer_id: row.trainer_id || "",
       customer_id: row.customer_id || "",
+      class_id: row.class_id || "",
       start_datetime: row.start_datetime ? new Date(row.start_datetime).toISOString().slice(0, 16) : "",
       end_datetime: row.end_datetime ? new Date(row.end_datetime).toISOString().slice(0, 16) : "",
       hourly_rate: row.hourly_rate ?? "",
       total_amount: row.total_amount ?? "",
-      currency: row.currency || "USD",
+      currency: row.currency || "MYR",
       status: row.status || "booked",
     });
     setOpen(true);
@@ -198,15 +226,18 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
       const payload = {
         branch_id: form.branch_id,
         trainer_id: form.trainer_id,
-        customer_id: form.customer_id || null,
+        class_id: form.class_id,
         start_datetime: form.start_datetime ? new Date(form.start_datetime).toISOString() : null,
         end_datetime: form.end_datetime ? new Date(form.end_datetime).toISOString() : null,
         hourly_rate: form.hourly_rate === "" ? null : Number(form.hourly_rate),
         total_amount: form.total_amount === "" ? undefined : Number(form.total_amount),
-        currency: form.currency || "USD",
+        currency: form.currency || "MYR",
         status: form.status || "booked",
       };
 
+      if (form.customer_id && String(form.customer_id).trim()) {
+        payload.customer_id = String(form.customer_id).trim();
+      }
       if (!payload.branch_id || !payload.trainer_id) {
         throw new Error("branch_id and trainer_id are required");
       }
@@ -337,6 +368,7 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
             <TableCell>Start</TableCell>
             <TableCell>End</TableCell>
             <TableCell>Trainer</TableCell>
+            <TableCell>Class</TableCell>
             <TableCell align="right">Hourly</TableCell>
             <TableCell align="right">Total</TableCell>
             <TableCell>Currency</TableCell>
@@ -358,6 +390,7 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
                 <TableCell>{fmt(row.start_datetime)}</TableCell>
                 <TableCell>{fmt(row.end_datetime)}</TableCell>
                 <TableCell>{row.trainer?.name || row.trainer?.full_name || row.trainer_id}</TableCell>
+                <TableCell>{row.class?.name || row.class?.fname || row.class_id}</TableCell>
                 <TableCell align="right">{row.hourly_rate}</TableCell>
                 <TableCell align="right">{row.total_amount}</TableCell>
                 <TableCell>{row.currency}</TableCell>
@@ -409,6 +442,24 @@ export const CompanyTrainerBookingsTab = ({ companyId }) => {
                 {branches.map((b) => (
                   <MenuItem key={b.id} value={b.id}>
                     {b.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+             <Grid item xs={12} md={6}>
+              <TextField
+                select
+                fullWidth
+                label="Class"
+                value={form.class_id || ""}
+                onChange={(e) => setForm((s) => ({ ...s, class_id: e.target.value }))}
+                helperText="Leave empty for Private session"
+              >
+                <MenuItem value="">Private session</MenuItem>
+
+                {classes.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>
+                    {c.name || c.id}
                   </MenuItem>
                 ))}
               </TextField>

@@ -59,7 +59,7 @@ export const MembershipPlansPage = () => {
     billing_type: "monthly",
     billing_cycle_days: "",
     price: "",
-    currency: "USD",
+    currency: "MYR",
     max_active_per_user: 1,
     is_active: true,
   });
@@ -216,7 +216,7 @@ export const MembershipPlansPage = () => {
       billing_type: "monthly",
       billing_cycle_days: "",
       price: "",
-      currency: "USD",
+      currency: "MYR",
       max_active_per_user: 1,
       is_active: true,
     });
@@ -235,7 +235,7 @@ export const MembershipPlansPage = () => {
         billing_type: plan.billing_type || "monthly",
         billing_cycle_days: plan.billing_cycle_days ?? "",
         price: plan.price ?? "",
-        currency: plan.currency || "USD",
+        currency: plan.currency || "MYR",
         max_active_per_user: plan.max_active_per_user ?? 1,
         is_active: plan.is_active ?? true,
       });
@@ -275,7 +275,7 @@ export const MembershipPlansPage = () => {
       billing_cycle_days:
         formValues.billing_cycle_days === "" ? null : Number(formValues.billing_cycle_days),
       price: Number(formValues.price),
-      currency: formValues.currency || "USD",
+      currency: formValues.currency || "MYR",
       max_active_per_user: Number(formValues.max_active_per_user || 1),
       is_active: !!formValues.is_active,
       // branch_id is only valid when branch_specific

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from "react";
 import {
   Container,
   Grid,
@@ -12,7 +12,7 @@ import {
   ListItemText,
   Divider,
   Chip,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Business as BusinessIcon,
   CheckCircle as ActiveIcon,
@@ -20,43 +20,149 @@ import {
   Store as BranchIcon,
   People as UsersIcon,
   History as HistoryIcon,
-} from '@mui/icons-material';
-import { AdminLayout } from '../../components/layouts/AdminLayout';
-import { useApiQuery } from '../../hooks/useQuery';
-import { API_ENDPOINTS } from '../../config/api';
-import { Loading } from '../../components/common/Loading';
-import { formatDateTime } from '../../utils/format';
+} from "@mui/icons-material";
+
+import { useQueries } from "@tanstack/react-query";
+
+import { AdminLayout } from "../../components/layouts/AdminLayout";
+import { useApiQuery } from "../../hooks/useQuery";
+import { API_BASE_URL, API_ENDPOINTS } from "../../config/api";
+import { Loading } from "../../components/common/Loading";
+import { formatDateTime } from "../../utils/format";
+
+// ---------------- helpers ----------------
+const toArray = (res) => {
+  const arr =
+    res?.data?.companies ||
+    res?.data?.branches ||
+    res?.data?.users ||
+    res?.data?.rows ||
+    res?.data?.data ||
+    res?.data ||
+    res;
+  return Array.isArray(arr) ? arr : [];
+};
+
+const getToken = () => {
+  // try common keys (adjust if your app uses different key)
+  return (
+    localStorage.getItem("token") ||
+    localStorage.getItem("access_token") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("authToken") ||
+    ""
+  );
+};
+
+const fetchJson = async (endpoint) => {
+  const token = getToken();
+  const url = endpoint.startsWith("http") ? endpoint : `${API_BASE_URL}${endpoint}`;
+
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  // if backend returns json error
+  let body = null;
+  try {
+    body = await res.json();
+  } catch (e) {
+    // ignore
+  }
+
+  if (!res.ok) {
+    const msg = body?.message || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return body;
+};
 
 export const DashboardPage = () => {
+  // 1) Companies
   const { data: companiesData, isLoading: companiesLoading } = useApiQuery(
-    ['admin', 'companies'],
+    ["admin", "companies"],
     API_ENDPOINTS.ADMIN.PLATFORM.COMPANIES
   );
 
-  // Mock audit logs - replace with actual endpoint when available
-  const { data: auditData, isLoading: auditLoading } = useApiQuery(
-    ['admin', 'audit-logs', 'recent'],
-    API_ENDPOINTS.ADMIN.PLATFORM.AUDIT_LOGS + '?limit=5',
-    { enabled: false } // Disable until endpoint exists
+  const companies = useMemo(() => toArray(companiesData), [companiesData]);
+
+  const activeCompanies = useMemo(
+    () => companies.filter((c) => String(c.status || "").toLowerCase() === "active"),
+    [companies]
   );
 
-  const companies = companiesData?.data || [];
-  const activeCompanies = companies.filter((c) => c.status === 'active');
-  const suspendedCompanies = companies.filter((c) => c.status === 'suspended');
-  
-  // Calculate aggregated stats (mock - would need backend aggregation)
-  const totalBranches = 0; // Would need backend endpoint
-  const totalUsers = 0; // Would need backend endpoint
-  
-  const recentCompanies = [...companies]
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-    .slice(0, 5);
-  
-  const recentSuspended = suspendedCompanies
-    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
-    .slice(0, 5);
+  const suspendedCompanies = useMemo(
+    () => companies.filter((c) => String(c.status || "").toLowerCase() === "suspended"),
+    [companies]
+  );
 
-  const auditLogs = auditData?.data || [];
+  // 2) Branch count aggregation (✅ correct way using useQueries)
+  const branchQueries = useQueries({
+    queries: companies.map((c) => {
+      const endpoint = API_ENDPOINTS.BRANCHES?.LIST
+        ? API_ENDPOINTS.BRANCHES.LIST(c.id)
+        : `/companies/${c.id}/branches`;
+
+      return {
+        queryKey: ["admin", "company-branches", c.id],
+        queryFn: () => fetchJson(endpoint),
+        enabled: !!companies.length,
+        staleTime: 30_000,
+      };
+    }),
+  });
+
+  const branchesLoading = useMemo(
+    () => branchQueries.some((q) => q.isLoading),
+    [branchQueries]
+  );
+
+  const totalBranches = useMemo(() => {
+    let sum = 0;
+    for (const q of branchQueries) {
+      const arr =
+        q?.data?.data?.branches ||
+        q?.data?.branches ||
+        q?.data?.data?.rows ||
+        q?.data?.rows ||
+        q?.data?.data ||
+        q?.data;
+      if (Array.isArray(arr)) sum += arr.length;
+      else if (Array.isArray(arr?.rows)) sum += arr.rows.length;
+    }
+    return sum;
+  }, [branchQueries]);
+
+  // 3) Users count (keep your old behavior = 0 until endpoint exists)
+  const totalUsers = 0;
+
+  // 4) Audit logs (still disabled like your code)
+  const { data: auditData, isLoading: auditLoading } = useApiQuery(
+    ["admin", "audit-logs", "recent"],
+    API_ENDPOINTS.ADMIN.PLATFORM.AUDIT_LOGS + "?limit=5",
+    { enabled: false }
+  );
+  const auditLogs = useMemo(() => toArray(auditData), [auditData]);
+
+  const recentCompanies = useMemo(() => {
+    return [...companies]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 5);
+  }, [companies]);
+
+  const recentSuspended = useMemo(() => {
+    return [...suspendedCompanies]
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+      )
+      .slice(0, 5);
+  }, [suspendedCompanies]);
 
   if (companiesLoading) {
     return (
@@ -79,7 +185,7 @@ export const DashboardPage = () => {
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
-                  <BusinessIcon sx={{ fontSize: 40, color: 'primary.main', mr: 2 }} />
+                  <BusinessIcon sx={{ fontSize: 40, color: "primary.main", mr: 2 }} />
                   <Box>
                     <Typography variant="h4">{companies.length}</Typography>
                     <Typography color="text.secondary">Total Companies</Typography>
@@ -93,7 +199,7 @@ export const DashboardPage = () => {
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
-                  <ActiveIcon sx={{ fontSize: 40, color: 'success.main', mr: 2 }} />
+                  <ActiveIcon sx={{ fontSize: 40, color: "success.main", mr: 2 }} />
                   <Box>
                     <Typography variant="h4">{activeCompanies.length}</Typography>
                     <Typography color="text.secondary">Active Companies</Typography>
@@ -107,7 +213,7 @@ export const DashboardPage = () => {
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
-                  <SuspendedIcon sx={{ fontSize: 40, color: 'error.main', mr: 2 }} />
+                  <SuspendedIcon sx={{ fontSize: 40, color: "error.main", mr: 2 }} />
                   <Box>
                     <Typography variant="h4">{suspendedCompanies.length}</Typography>
                     <Typography color="text.secondary">Suspended Companies</Typography>
@@ -121,9 +227,9 @@ export const DashboardPage = () => {
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
-                  <BranchIcon sx={{ fontSize: 40, color: 'info.main', mr: 2 }} />
+                  <BranchIcon sx={{ fontSize: 40, color: "info.main", mr: 2 }} />
                   <Box>
-                    <Typography variant="h4">{totalBranches}</Typography>
+                    <Typography variant="h4">{branchesLoading ? "…" : totalBranches}</Typography>
                     <Typography color="text.secondary">Total Branches</Typography>
                   </Box>
                 </Box>
@@ -135,7 +241,7 @@ export const DashboardPage = () => {
             <Card>
               <CardContent>
                 <Box display="flex" alignItems="center" mb={2}>
-                  <UsersIcon sx={{ fontSize: 40, color: 'warning.main', mr: 2 }} />
+                  <UsersIcon sx={{ fontSize: 40, color: "warning.main", mr: 2 }} />
                   <Box>
                     <Typography variant="h4">{totalUsers}</Typography>
                     <Typography color="text.secondary">Total Users</Typography>
@@ -165,7 +271,7 @@ export const DashboardPage = () => {
                         <Chip
                           label={company.status}
                           size="small"
-                          color={company.status === 'active' ? 'success' : 'default'}
+                          color={company.status === "active" ? "success" : "default"}
                         />
                       </ListItem>
                       {idx < recentCompanies.length - 1 && <Divider />}
@@ -212,10 +318,9 @@ export const DashboardPage = () => {
             <Paper sx={{ p: 2 }}>
               <Box display="flex" alignItems="center" mb={2}>
                 <HistoryIcon sx={{ mr: 1 }} />
-                <Typography variant="h6">
-                  Latest Audit Log Entries
-                </Typography>
+                <Typography variant="h6">Latest Audit Log Entries</Typography>
               </Box>
+
               {auditLoading ? (
                 <Loading />
               ) : auditLogs.length > 0 ? (
