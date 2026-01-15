@@ -22,7 +22,7 @@ const {
   Group, GroupMember, GroupBooking,
   TaxRate, MediaFile, MediaVariant,
   User, Role, Permission, UserRole, RolePermission,
-  AuthIdentity, AuthSession, OtpCode, CompanyCustomer
+  AuthIdentity, AuthSession, OtpCode, CompanyCustomer,Trainer,Class
 } = require('../models');
 
 // ======================================================
@@ -307,6 +307,22 @@ companyConsoleRouter.use(authenticate, validateCompany, requirePlatformAdmin);
 companyConsoleRouter.use('/branches', CrudRouterFactory.create(new BaseService(Branch), {
   requireAuth: true,
   requireCompany: true,
+  rbac: requirePlatformAdmin
+}));
+
+// Trainers
+platformAdminRouter.use('/trainers', CrudRouterFactory.create(new BaseService(Trainer), {
+  requireAuth: true,
+  rbac: requirePlatformAdmin
+}));
+platformAdminRouter.use('/trainer-bookings', CrudRouterFactory.create(new BaseService(Trainer), {
+  requireAuth: true,
+  rbac: requirePlatformAdmin
+}));
+
+// Clases
+platformAdminRouter.use('/classes', CrudRouterFactory.create(new BaseService(Class), {
+  requireAuth: true,
   rbac: requirePlatformAdmin
 }));
 
