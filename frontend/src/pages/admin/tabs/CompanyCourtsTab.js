@@ -1,4 +1,3 @@
-// src/pages/admin/tabs/CompanyCourtsTab.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Paper,
@@ -76,11 +75,34 @@ const apiFetch = async (path, { method = "GET", body } = {}) => {
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const msg = json?.message || json?.error?.message || `Request failed (${res.status})`;
+    const msg =
+      json?.message || json?.error?.message || `Request failed (${res.status})`;
     const err = new Error(msg);
     err.status = res.status;
     err.data = json;
     throw err;
+  }
+  return json;
+};
+
+const uploadMedia = async (formData) => {
+  const token = getAuthToken();
+  const url = `${API_BASE_URL}/media-files/upload`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // ❌ don't set content-type for FormData
+    },
+    body: formData,
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    const msg =
+      json?.message || json?.error?.message || `Upload failed (${res.status})`;
+    throw new Error(msg);
   }
   return json;
 };
@@ -110,15 +132,21 @@ export const CompanyCourtsTab = ({ companyId }) => {
   const [saving, setSaving] = useState(false);
   const [errMsg, setErrMsg] = useState("");
 
-  // ✅ IMPORTANT: NO /admin endpoints
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+
+  const [existingImages, setExistingImages] = useState([]);
+  const [existingPreviewUrl, setExistingPreviewUrl] = useState("");
+  const [loadingImages, setLoadingImages] = useState(false);
+
   const branchesEndpoint = useMemo(() => {
     if (!companyId) return "";
-    return API_ENDPOINTS.BRANCHES.LIST(companyId); // /companies/:companyId/branches
+    return API_ENDPOINTS.BRANCHES.LIST(companyId);
   }, [companyId]);
 
   const courtsEndpoint = useMemo(() => {
     if (!companyId || !selectedBranchId) return "";
-    return API_ENDPOINTS.COURTS.LIST(companyId, selectedBranchId); // /companies/:companyId/branches/:branchId/courts
+    return API_ENDPOINTS.COURTS.LIST(companyId, selectedBranchId);
   }, [companyId, selectedBranchId]);
 
   // GET branches
@@ -133,7 +161,11 @@ export const CompanyCourtsTab = ({ companyId }) => {
   );
 
   const branches = useMemo(() => {
-    const arr = branchesRes?.data?.branches || branchesRes?.branches || branchesRes?.data || branchesRes;
+    const arr =
+      branchesRes?.data?.branches ||
+      branchesRes?.branches ||
+      branchesRes?.data ||
+      branchesRes;
     return Array.isArray(arr) ? arr : [];
   }, [branchesRes]);
 
@@ -154,7 +186,8 @@ export const CompanyCourtsTab = ({ companyId }) => {
   );
 
   const courts = useMemo(() => {
-    const arr = courtsRes?.data?.courts || courtsRes?.courts || courtsRes?.data || courtsRes;
+    const arr =
+      courtsRes?.data?.courts || courtsRes?.courts || courtsRes?.data || courtsRes;
     return Array.isArray(arr) ? arr : [];
   }, [courtsRes]);
 
@@ -162,18 +195,93 @@ export const CompanyCourtsTab = ({ companyId }) => {
     return branches.find((b) => b.id === selectedBranchId)?.name || "";
   }, [branches, selectedBranchId]);
 
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+    };
+  }, [imagePreview, existingPreviewUrl]);
+
+  const loadExistingCourtImages = async (courtId) => {
+    if (!courtId) return;
+
+    setLoadingImages(true);
+    try {
+      const res = await apiFetch(
+        `/media-files/owner?owner_type=court&owner_id=${courtId}`,
+        { method: "GET" }
+      );
+
+      const arr =
+        res?.data?.mediaFiles || res?.data?.images || res?.data || [];
+      setExistingImages(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      setExistingImages([]);
+    } finally {
+      setLoadingImages(false);
+    }
+  };
+
+  const primaryImage = useMemo(() => {
+    if (!existingImages?.length) return null;
+    return existingImages.find((x) => x?.is_primary) || existingImages[0] || null;
+  }, [existingImages]);
+
+  const loadExistingImagePreview = async (mediaId) => {
+    if (!mediaId) return;
+
+    try {
+      if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+      setExistingPreviewUrl("");
+
+      const token = getAuthToken();
+      const url = `${API_BASE_URL}/media-files/${mediaId}`;
+
+      const resp = await fetch(url, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!resp.ok) throw new Error(`Image fetch failed (${resp.status})`);
+
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setExistingPreviewUrl(blobUrl);
+    } catch {
+      setExistingPreviewUrl("");
+    }
+  };
+
+  useEffect(() => {
+    if (!openForm || !isEdit) return;
+    if (!primaryImage?.id) return;
+    loadExistingImagePreview(primaryImage.id);
+  }, [openForm, isEdit, primaryImage?.id]);
+
+  const resetImages = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview("");
+
+    setExistingImages([]);
+    if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+    setExistingPreviewUrl("");
+  };
+
   const openCreate = () => {
     setErrMsg("");
     setIsEdit(false);
     setActiveCourtId(null);
     setForm(emptyCourtForm);
+    resetImages();
     setOpenForm(true);
   };
 
-  const openEdit = (court) => {
+  const openEdit = async (court) => {
     setErrMsg("");
     setIsEdit(true);
     setActiveCourtId(court?.id);
+
     setForm({
       name: court?.name || "",
       court_number: court?.court_number || "",
@@ -185,7 +293,11 @@ export const CompanyCourtsTab = ({ companyId }) => {
       hourly_rate: court?.hourly_rate ?? "",
       status: court?.status || "active",
     });
+
+    resetImages();
     setOpenForm(true);
+
+    await loadExistingCourtImages(court?.id);
   };
 
   const closeForm = () => {
@@ -193,12 +305,25 @@ export const CompanyCourtsTab = ({ companyId }) => {
     setOpenForm(false);
   };
 
+  const uploadCourtImage = async (courtId) => {
+    if (!imageFile || !courtId) return;
+
+    const fd = new FormData();
+    fd.append("file", imageFile, imageFile.name);
+    fd.append("owner_type", "court");
+    fd.append("owner_id", courtId);
+    fd.append("is_primary", "true");
+
+    return uploadMedia(fd);
+  };
+
   const handleSave = async () => {
     setErrMsg("");
 
     if (!companyId || !selectedBranchId) return setErrMsg("Select a branch first.");
     if (!form.name?.trim()) return setErrMsg("Court name is required.");
-    if (form.hourly_rate === "" || form.hourly_rate === null) return setErrMsg("Hourly rate is required.");
+    if (form.hourly_rate === "" || form.hourly_rate === null)
+      return setErrMsg("Hourly rate is required.");
 
     setSaving(true);
     try {
@@ -215,16 +340,30 @@ export const CompanyCourtsTab = ({ companyId }) => {
         status: form.status || "active",
       };
 
+      let courtId = activeCourtId;
+
       if (isEdit && activeCourtId) {
-        await apiFetch(API_ENDPOINTS.COURTS.UPDATE(companyId, selectedBranchId, activeCourtId), {
-          method: "PATCH",
-          body: payload,
-        });
+        await apiFetch(
+          API_ENDPOINTS.COURTS.UPDATE(companyId, selectedBranchId, activeCourtId),
+          { method: "PATCH", body: payload }
+        );
+        courtId = activeCourtId;
       } else {
-        await apiFetch(API_ENDPOINTS.COURTS.CREATE(companyId, selectedBranchId), {
-          method: "POST",
-          body: payload,
-        });
+        const created = await apiFetch(
+          API_ENDPOINTS.COURTS.CREATE(companyId, selectedBranchId),
+          { method: "POST", body: payload }
+        );
+
+        courtId =
+          created?.data?.court?.id ||
+          created?.court?.id ||
+          created?.data?.id ||
+          created?.id ||
+          null;
+      }
+
+      if (courtId && imageFile) {
+        await uploadCourtImage(courtId);
       }
 
       setOpenForm(false);
@@ -244,7 +383,9 @@ export const CompanyCourtsTab = ({ companyId }) => {
     if (!ok) return;
 
     try {
-      await apiFetch(API_ENDPOINTS.COURTS.DELETE(companyId, selectedBranchId, court.id), { method: "DELETE" });
+      await apiFetch(API_ENDPOINTS.COURTS.DELETE(companyId, selectedBranchId, court.id), {
+        method: "DELETE",
+      });
       setReloadCourtsKey((k) => k + 1);
     } catch (e) {
       setErrMsg(e?.message || "Failed to delete court");
@@ -522,6 +663,89 @@ export const CompanyCourtsTab = ({ companyId }) => {
               multiline
               minRows={2}
             />
+
+            {/* ✅ Existing image (Edit mode) */}
+            {isEdit ? (
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>
+                  Existing Image
+                </Typography>
+
+                {loadingImages ? (
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="body2" color="text.secondary">
+                      Loading...
+                    </Typography>
+                  </Box>
+                ) : primaryImage ? (
+                  <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <img
+                      src={existingPreviewUrl || ""}
+                      alt="existing"
+                      style={{
+                        width: 150,
+                        height: 90,
+                        objectFit: "cover",
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                        background: "#fafafa",
+                      }}
+                    />
+                    <Stack spacing={0.5}>
+                      <Chip size="small" label={primaryImage.file_name || "image"} />
+                      <Typography variant="caption" color="text.secondary">
+                        {primaryImage.is_primary ? "Primary" : "Secondary"}
+                      </Typography>
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No image uploaded yet
+                  </Typography>
+                )}
+              </Box>
+            ) : null}
+
+            {/* ✅ New image upload */}
+            <Button variant="outlined" component="label">
+              Choose New Image (Optional)
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  setImageFile(file);
+
+                  if (imagePreview) URL.revokeObjectURL(imagePreview);
+                  setImagePreview(URL.createObjectURL(file));
+                }}
+              />
+            </Button>
+
+            {imageFile ? <Chip label={imageFile.name} /> : null}
+
+            {imagePreview ? (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>
+                  New Preview
+                </Typography>
+                <img
+                  src={imagePreview}
+                  alt="preview"
+                  style={{
+                    width: 150,
+                    height: 90,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                  }}
+                />
+              </Box>
+            ) : null}
           </Stack>
         </DialogContent>
 

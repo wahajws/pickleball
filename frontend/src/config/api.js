@@ -225,5 +225,6 @@ export const API_ENDPOINTS = {
     ACTIVITY_EXPORT: "/admin/activity/export",
     BEHAVIOUR: "/admin/behaviour",
     BEHAVIOUR_EXPORT: "/admin/behaviour/export",
+    MEDIA_FILE: "/media-files/upload",
   },
 };

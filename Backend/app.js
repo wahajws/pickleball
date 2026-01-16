@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const path = require("path");
 
 const errorHandler = require("./src/middlewares/errorHandler");
 const { activityContext } = require("./src/middlewares/activity");
@@ -37,7 +38,6 @@ const behaviourRoutes = require("./src/routes/behaviour");
 const branchContactsRoutes = require("./src/routes/branch-contacts");
 const branchCourtsRoutes = require("./src/routes/branch-courts");
 
-// ✅ Company demo routes (files are inside: src/routes/company/)
 const companyCourtsRoutes = require("./src/routes/company/company-courts");
 const companyTrainersRoutes = require("./src/routes/company/company-trainers");
 const companyClassesRoutes = require("./src/routes/company/company-classes");
@@ -136,9 +136,25 @@ app.use("/api/admin", adminRoutes);
 // Behaviour (you already had separate file for this)
 app.use("/api/admin/behaviour", behaviourRoutes);
 
+// app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+// app.use("/api/media-files", require("./routes/MediaFile"));
+
 // --------------------
 // Error handler (last)
 // --------------------
 app.use(errorHandler);
+
+const mediaFilesRoutes = require("./src/routes/media");
+app.use("/api/media-files", mediaFilesRoutes);
+
+
+app.use((err, req, res, next) => {
+  console.error("ERROR =>", err);
+  res.status(500).json({
+    success: false,
+    message: err.message,
+    sqlMessage: err?.original?.sqlMessage,
+  });
+});
 
 module.exports = app;

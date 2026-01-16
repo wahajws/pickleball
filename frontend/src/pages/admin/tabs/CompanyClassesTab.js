@@ -20,11 +20,12 @@ import {
   CircularProgress,
   IconButton,
   MenuItem,
+  Chip,
 } from "@mui/material";
 import { Add, Edit, Delete, Refresh } from "@mui/icons-material";
 
 import { adminFetch } from "./_adminApi";
-import { API_ENDPOINTS } from "../../../config/api";
+import { API_BASE_URL, API_ENDPOINTS } from "../../../config/api";
 
 const empty = {
   branch_id: "",
@@ -35,6 +36,29 @@ const empty = {
   duration_mins: 60,
   price: "",
   status: "active",
+};
+
+// ✅ token helper (for existing image blob preview)
+const getAuthToken = () => {
+  const direct =
+    localStorage.getItem("token") ||
+    localStorage.getItem("accessToken") ||
+    localStorage.getItem("access_token");
+  if (direct) return direct;
+
+  try {
+    const auth = JSON.parse(localStorage.getItem("auth") || "null");
+    if (auth?.token) return auth.token;
+    if (auth?.accessToken) return auth.accessToken;
+  } catch {}
+
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    if (user?.token) return user.token;
+    if (user?.accessToken) return user.accessToken;
+  } catch {}
+
+  return null;
 };
 
 export const CompanyClassesTab = ({ companyId }) => {
@@ -54,27 +78,55 @@ export const CompanyClassesTab = ({ companyId }) => {
   const [activeId, setActiveId] = useState(null);
   const [form, setForm] = useState(empty);
 
+  // ✅ image states
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+
+  const [existingImages, setExistingImages] = useState([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+  const [existingPreviewUrl, setExistingPreviewUrl] = useState("");
+
   // ✅ Company module endpoints (NO /admin)
   const classesEndpoint = useMemo(() => {
     if (!companyId) return "";
     const ep = API_ENDPOINTS?.COMPANY_MODULES?.CLASSES;
-    if (ep?.LIST) return ep.LIST(companyId); // /companies/:companyId/classes
+    if (ep?.LIST) return ep.LIST(companyId);
     return `/companies/${companyId}/classes`;
   }, [companyId]);
 
   const branchesEndpoint = useMemo(() => {
     if (!companyId) return "";
     const ep = API_ENDPOINTS?.BRANCHES;
-    if (ep?.LIST) return ep.LIST(companyId); // /companies/:companyId/branches
+    if (ep?.LIST) return ep.LIST(companyId);
     return `/companies/${companyId}/branches`;
   }, [companyId]);
 
   const trainersEndpoint = useMemo(() => {
     if (!companyId) return "";
     const ep = API_ENDPOINTS?.COMPANY_MODULES?.TRAINERS;
-    if (ep?.LIST) return ep.LIST(companyId); // /companies/:companyId/trainers
+    if (ep?.LIST) return ep.LIST(companyId);
     return `/companies/${companyId}/trainers`;
   }, [companyId]);
+
+  // ✅ cleanup previews
+  useEffect(() => {
+    return () => {
+      if (imagePreview) URL.revokeObjectURL(imagePreview);
+      if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+    };
+  }, [imagePreview, existingPreviewUrl]);
+
+  const resetImages = () => {
+    setImageFile(null);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview("");
+
+    setExistingImages([]);
+    setLoadingImages(false);
+
+    if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+    setExistingPreviewUrl("");
+  };
 
   const loadMeta = async () => {
     if (!branchesEndpoint || !trainersEndpoint) return;
@@ -85,15 +137,12 @@ export const CompanyClassesTab = ({ companyId }) => {
         adminFetch(trainersEndpoint),
       ]);
 
-      const bArr =
-        bRes?.data?.branches || bRes?.branches || bRes?.data || bRes;
-      const tArr =
-        tRes?.data?.trainers || tRes?.trainers || tRes?.data || tRes;
+      const bArr = bRes?.data?.branches || bRes?.branches || bRes?.data || bRes;
+      const tArr = tRes?.data?.trainers || tRes?.trainers || tRes?.data || tRes;
 
       setBranches(Array.isArray(bArr) ? bArr : []);
       setTrainers(Array.isArray(tArr) ? tArr : []);
     } catch (e) {
-      // don't hard fail the page; show msg only
       setErrMsg(e?.message || "Failed to load branches/trainers");
       setBranches([]);
       setTrainers([]);
@@ -134,12 +183,70 @@ export const CompanyClassesTab = ({ companyId }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classesEndpoint, reloadKey]);
 
+  // ✅ Load existing class images (owner_type = other)
+  const loadExistingClassImages = async (classId) => {
+    if (!classId) return;
+    setLoadingImages(true);
+    try {
+      const res = await adminFetch(
+        `/media-files/owner?owner_type=other&owner_id=${classId}`,
+        { method: "GET" }
+      );
+
+      const arr = res?.data?.mediaFiles || res?.data || [];
+      setExistingImages(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      setExistingImages([]);
+    } finally {
+      setLoadingImages(false);
+    }
+  };
+
+  const primaryImage = useMemo(() => {
+    if (!existingImages?.length) return null;
+    return existingImages.find((x) => x?.is_primary) || existingImages[0] || null;
+  }, [existingImages]);
+
+  // ✅ Load image blob preview with token
+  const loadExistingImagePreview = async (mediaId) => {
+    if (!mediaId) return;
+
+    try {
+      if (existingPreviewUrl) URL.revokeObjectURL(existingPreviewUrl);
+      setExistingPreviewUrl("");
+
+      const token = getAuthToken();
+      const url = `${API_BASE_URL}/media-files/${mediaId}`;
+
+      const resp = await fetch(url, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (!resp.ok) throw new Error(`Image fetch failed (${resp.status})`);
+
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      setExistingPreviewUrl(blobUrl);
+    } catch {
+      setExistingPreviewUrl("");
+    }
+  };
+
+  // ✅ when edit dialog opened + primary image changes
+  useEffect(() => {
+    if (!open || !isEdit) return;
+    if (!primaryImage?.id) return;
+    loadExistingImagePreview(primaryImage.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit, primaryImage?.id]);
+
   const openCreate = () => {
     setErrMsg("");
     setIsEdit(false);
     setActiveId(null);
+    resetImages();
 
-    // default select first branch/trainer if available
     setForm({
       ...empty,
       branch_id: branches?.[0]?.id || "",
@@ -149,10 +256,11 @@ export const CompanyClassesTab = ({ companyId }) => {
     setOpen(true);
   };
 
-  const openEdit = (c) => {
+  const openEdit = async (c) => {
     setErrMsg("");
     setIsEdit(true);
     setActiveId(c?.id);
+    resetImages();
 
     setForm({
       branch_id: c?.branch_id || "",
@@ -166,11 +274,33 @@ export const CompanyClassesTab = ({ companyId }) => {
     });
 
     setOpen(true);
+
+    // ✅ load existing images for this class
+    await loadExistingClassImages(c?.id);
   };
 
   const close = () => {
     if (saving) return;
     setOpen(false);
+  };
+
+  // ✅ Upload class image (owner_type=other)
+  const uploadClassImage = async (classId) => {
+    if (!imageFile || !classId) return;
+
+    const fd = new FormData();
+    fd.append("file", imageFile, imageFile.name);
+    fd.append("owner_type", "other");
+    fd.append("owner_id", classId);
+    fd.append("is_primary", "true");
+
+    const res = await adminFetch("/media-files/upload", {
+      method: "POST",
+      body: fd,
+    });
+
+    if (res?.success === false) throw new Error(res?.message || "Image upload failed");
+    return res;
   };
 
   const save = async () => {
@@ -193,13 +323,32 @@ export const CompanyClassesTab = ({ companyId }) => {
         status: form.status || "active",
       };
 
+      let classId = activeId;
+
       if (isEdit && activeId) {
         await adminFetch(`${classesEndpoint}/${activeId}`, {
           method: "PATCH",
           body: payload,
         });
+        classId = activeId;
       } else {
-        await adminFetch(classesEndpoint, { method: "POST", body: payload });
+        const created = await adminFetch(classesEndpoint, {
+          method: "POST",
+          body: payload,
+        });
+
+        classId =
+          created?.data?.class?.id ||
+          created?.data?.classes?.id ||
+          created?.class?.id ||
+          created?.data?.id ||
+          created?.id ||
+          null;
+      }
+
+      // ✅ upload after save if image selected
+      if (classId && imageFile) {
+        await uploadClassImage(classId);
       }
 
       setOpen(false);
@@ -286,8 +435,12 @@ export const CompanyClassesTab = ({ companyId }) => {
                   <TableCell>{c.price ?? "—"}</TableCell>
                   <TableCell>{c.status || "—"}</TableCell>
                   <TableCell align="right">
-                    <IconButton size="small" onClick={() => openEdit(c)}><Edit fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => del(c)}><Delete fontSize="small" /></IconButton>
+                    <IconButton size="small" onClick={() => openEdit(c)}>
+                      <Edit fontSize="small" />
+                    </IconButton>
+                    <IconButton size="small" color="error" onClick={() => del(c)}>
+                      <Delete fontSize="small" />
+                    </IconButton>
                   </TableCell>
                 </TableRow>
               ))
@@ -387,6 +540,89 @@ export const CompanyClassesTab = ({ companyId }) => {
               <MenuItem value="inactive">inactive</MenuItem>
               <MenuItem value="deleted">deleted</MenuItem>
             </TextField>
+
+            {/* ✅ Existing Image (Edit mode only) */}
+            {isEdit ? (
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>
+                  Existing Image
+                </Typography>
+
+                {loadingImages ? (
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+                    <CircularProgress size={16} />
+                    <Typography variant="body2" color="text.secondary">
+                      Loading...
+                    </Typography>
+                  </Box>
+                ) : primaryImage ? (
+                  <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
+                    <img
+                      src={existingPreviewUrl || ""}
+                      alt="existing"
+                      style={{
+                        width: 150,
+                        height: 90,
+                        objectFit: "cover",
+                        borderRadius: 10,
+                        border: "1px solid #ddd",
+                        background: "#fafafa",
+                      }}
+                    />
+                    <Stack spacing={0.5}>
+                      <Chip size="small" label={primaryImage.file_name || "image"} />
+                      <Typography variant="caption" color="text.secondary">
+                        {primaryImage.is_primary ? "Primary" : "Secondary"}
+                      </Typography>
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    No image uploaded yet
+                  </Typography>
+                )}
+              </Box>
+            ) : null}
+
+            {/* ✅ New image upload */}
+            <Button variant="outlined" component="label">
+              Choose New Image (Optional)
+              <input
+                hidden
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+
+                  setImageFile(file);
+
+                  if (imagePreview) URL.revokeObjectURL(imagePreview);
+                  setImagePreview(URL.createObjectURL(file));
+                }}
+              />
+            </Button>
+
+            {imageFile ? <Chip label={imageFile.name} /> : null}
+
+            {imagePreview ? (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" sx={{ fontWeight: 800, mb: 1 }}>
+                  New Preview
+                </Typography>
+                <img
+                  src={imagePreview}
+                  alt="preview"
+                  style={{
+                    width: 150,
+                    height: 90,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                  }}
+                />
+              </Box>
+            ) : null}
           </Stack>
         </DialogContent>
 
