@@ -20,7 +20,6 @@ class BookingService extends BaseService {
   async createBooking(data, userId) {
     const { branch_id, items, participants, promo_code } = data;
 
-    // ✅ booking statuses allowed by DB enum
     const allowedBookingStatuses = [
       "pending",
       "confirmed",
@@ -30,7 +29,6 @@ class BookingService extends BaseService {
       "expired",
     ];
 
-    // ✅ payment statuses allowed by DB enum
     const allowedPaymentStatuses = [
       "pending",
       "processing",
@@ -54,7 +52,7 @@ class BookingService extends BaseService {
 
     const normalized = typeof rawStatus === "string" ? rawStatus.trim().toLowerCase() : null;
 
-    // ✅ map common UI/payment words to booking_status
+    // map common UI/payment words to booking_status
     const bookingStatusMap = {
       // payment-ish values -> booking confirmed
       succeeded: "confirmed",
@@ -80,7 +78,7 @@ class BookingService extends BaseService {
         ? mappedBookingStatus
         : "pending";
 
-    // ✅ if UI sends succeeded, set payment_status too
+    // if UI sends succeeded, set payment_status too
     const paymentStatusMap = {
       succeeded: "succeeded",
       success: "succeeded",
@@ -186,7 +184,6 @@ class BookingService extends BaseService {
           branch_id,
           booking_number: bookingNumber,
 
-          // ✅ FIX: use mapped status
           booking_status: bookingStatus,
 
           booking_source: data.booking_source || "customer_web",
@@ -195,13 +192,9 @@ class BookingService extends BaseService {
           tax_amount: taxAmount,
           fee_amount: feeAmount,
           total_amount: totalAmount,
-          currency: "USD",
-
-          // ✅ FIX: set payment status if UI sent succeeded
+          currency: "MYR",
           payment_status: paymentStatus,
-
           notes: data?.notes ?? null,
-
           created_by: userId,
         },
         { transaction: t }
